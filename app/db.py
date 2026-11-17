@@ -163,3 +163,59 @@ def update_analysis(rows: list[tuple]):
     """rows: (impact, analysis_json, id)"""
     with conn() as c:
         c.executemany("UPDATE articles SET impact=?, analysis=? WHERE id=?", rows)
+
+
+# ----------------------------------------------------------------------------- alerts
+def _alerts_schema(c):
+    c.execute("""CREATE TABLE IF NOT EXISTS alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, level TEXT, kind TEXT, title TEXT, body TEXT,
+        symbols TEXT, sectors TEXT, link TEXT, akey TEXT, article_id TEXT)""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_alerts_key ON alerts(akey, ts)")
+
+
+def add_alert(level: str, kind: str, title: str, body: str, symbols: list, sectors: list,
+              link: str, akey: str, article_id: str = "") -> int:
+    with conn() as c:
+        _alerts_schema(c)
+        cur = c.execute(
+            "INSERT INTO alerts (ts,level,kind,title,body,symbols,sectors,link,akey,article_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (now_iso(), level, kind, title, body, json.dumps(symbols), json.dumps(sectors), link, akey, article_id))
+        return cur.lastrowid
+
+
+def alert_key_since(akey: str, since_iso: str) -> bool:
+    with conn() as c:
+        _alerts_schema(c)
+        return c.execute("SELECT 1 FROM alerts WHERE akey=? AND ts>=?", (akey, since_iso)).fetchone() is not None
+
+
+def get_alerts(since_id: int = 0, limit: int = 100) -> list[dict]:
+    with conn() as c:
+        _alerts_schema(c)
+        rows = c.execute("SELECT * FROM alerts WHERE id>? ORDER BY id DESC LIMIT ?", (since_id, limit)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["symbols"] = json.loads(d["symbols"] or "[]")
+        d["sectors"] = json.loads(d["sectors"] or "[]")
+        out.append(d)
+    return out
+
+
+def latest_alert_id() -> int:
+    with conn() as c:
+        _alerts_schema(c)
+        r = c.execute("SELECT MAX(id) AS m FROM alerts").fetchone()
+    return r["m"] or 0
+
+
+# ----------------------------------------------------------------------------- watchlist
+def get_watchlist() -> list[str]:
+    try:
+        return json.loads(get_meta("watchlist", "[]"))
+    except Exception:
+        return []
+
+
+def set_watchlist(symbols: list[str]):
+    set_meta("watchlist", json.dumps(sorted({s.strip().upper() for s in symbols if s.strip()})[:100]))

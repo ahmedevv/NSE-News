@@ -12,8 +12,22 @@ REM Login for the dashboard. Leave DASH_PASS empty to disable the login (only OK
 set "DASH_USER=admin"
 set "DASH_PASS="
 
-REM Minutes between automatic news refreshes
-set "REFRESH_MINUTES=30"
+REM Minutes between news + price refreshes (minimum 2)
+set "REFRESH_MINUTES=5"
+
+REM ---- Alerts ----
+REM A story with impact score at or above ALERT_MIN_IMPACT (0-10) raises a "high" alert;
+REM at or above ALERT_CRITICAL_IMPACT a "critical" one. Raise them if you get too many alerts.
+set "ALERT_MIN_IMPACT=7"
+set "ALERT_CRITICAL_IMPACT=8"
+REM A stock moving this many % in a day (during market hours) raises a price-move alert
+set "MOVE_ALERT_PCT=3"
+
+REM Phone alerts via Telegram (optional, free). See README "Telegram alerts" for the 2-minute setup.
+set "TELEGRAM_BOT_TOKEN="
+set "TELEGRAM_CHAT_ID="
+REM Which alerts go to Telegram: watch (everything), high (high + critical + price moves), critical
+set "TELEGRAM_MIN_LEVEL=high"
 
 REM FinBERT financial-sentiment model (Hugging Face, runs locally on CPU; ~440 MB download on first run).
 REM 1 = use it (if setup installed it), 0 = rule engine only (saves about 1 GB of RAM).

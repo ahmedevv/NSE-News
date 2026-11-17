@@ -172,7 +172,9 @@ RULES = [
          impacts={"Broad Market": 1, "Aviation": 1, "Oil Marketing (OMC)": 1, "Paints": 1, "Defence": -1, "Gold & Jewellery": -1},
          why="De-escalation lowers the risk premium: crude and gold cool off, risk assets and fuel-consuming sectors recover, defence gives back gains."),
     dict(id="war_conflict", category="Geopolitical", name="War / military escalation", severity=8, directional=False,
-         patterns=[r"\b(war|missile|airstrike|air strike|drone strike|invasion|invade|military (strike|escalation|action)|shelling|troops|bombing|attack on)\b"],
+         patterns=[r"(?<!price )(?<!trade )(?<!cold )(?<!tariff )(?<!currency )\bwar\b(?!\s*(preparedness|games?|room|chest|of words|memorial|crimes? (trial|tribunal)|-?time|era|veterans?))",
+                   r"\b(missiles?|air ?strikes?|drone (strikes?|attacks?)|invasion|invades?|invaded|military (strikes?|escalation|action)|"
+                   r"shelling|troops|bombings?|bombed|attacks? on|launch(es|ed)? (strikes?|attacks?))\b"],
          impacts={"Defence": 2, "Upstream Oil & Gas": 1, "Gold & Jewellery": 1, "Aviation": -2, "Oil Marketing (OMC)": -1, "Paints": -1, "Broad Market": -1},
          why="Escalation usually triggers risk-off: oil and gold rise, FIIs sell emerging markets, defence names rally; fuel-sensitive sectors (aviation, OMCs, paints) fall."),
     dict(id="india_pak_china", category="Geopolitical", name="India border tension (Pakistan / China)", severity=8, directional=False,
@@ -180,7 +182,7 @@ RULES = [
          impacts={"Defence": 2, "Broad Market": -2, "Banks": -1, "Aviation": -1},
          why="Direct border tension hits Indian risk sentiment and FII flows the hardest and lifts defence PSUs on expected orders."),
     dict(id="middle_east_shipping", category="Geopolitical", name="Middle East / Red Sea / Hormuz disruption", severity=7, directional=False,
-         patterns=[r"\b(red sea|houthi|strait of hormuz|hormuz|suez)\b", r"\b(iran|israel)\b.{0,50}\b(attack|strike|retaliat|escalat|war)"],
+         patterns=[r"\b(red sea|houthi|strait of hormuz|hormuz|suez)\b", r"\b(iran|israel)\b.{0,50}(attack|strike|retaliat|escalat|\bwar\b)"],
          impacts={"Upstream Oil & Gas": 1, "Oil Marketing (OMC)": -2, "Shipping & Ports": 1, "Textiles & Exporters": -1, "Aviation": -1, "Paints": -1, "Chemicals": -1},
          why="India imports ~85% of its crude, much of it through Hormuz; shipping disruption raises freight and crude costs, squeezing OMCs and exporters while freight rates help shipping."),
     dict(id="russia_ukraine", category="Geopolitical", name="Russia-Ukraine developments", severity=4, directional=False,
@@ -188,7 +190,10 @@ RULES = [
          impacts={"Metals & Mining": 1, "Fertilisers & Agri": -1, "Upstream Oil & Gas": 1, "Oil Marketing (OMC)": -1},
          why="Affects global supply of crude, gas, fertiliser inputs, wheat and metals; also India's discounted Russian crude imports."),
     dict(id="sanctions", category="Geopolitical", name="Sanctions", severity=6, directional=False,
-         patterns=[r"\bsanction(s|ed)?\b"],
+         # geopolitical sanctions only - not "government sanctions 10 posts" (= approves)
+         patterns=[r"\b(impose[sd]?|new|fresh|tougher|secondary|lift(s|ed)?|ease[sd]?|eu|us|western)\s+sanctions\b",
+                   r"\bsanctions\s+(on|against|relief|waiver|regime)\b",
+                   r"\bsanctioned\s+(russian|iranian|chinese|entities|firms|companies|tankers?|oil|banks?)\b"],
          impacts={"Oil Marketing (OMC)": -1, "Upstream Oil & Gas": 1, "Metals & Mining": 1, "Banks": -1},
          why="Sanctions on oil producers tighten supply and can hit India's discounted crude sourcing and refining margins; secondary sanctions risk for banks/traders."),
     dict(id="trade_deal", category="Geopolitical", name="Trade deal / trade talks", severity=6, directional=False,
@@ -215,7 +220,8 @@ RULES = [
 
     # ---------------- commodities
     dict(id="crude", category="Commodity", name="Crude oil price move", severity=7, directional=True,
-         patterns=[r"\b(crude|brent|wti|oil prices?)\b"],
+         patterns=[r"\b(crude|brent|wti|oil prices?)\b",
+                   r"\boil\b(?=\s+(futures|jumps?|surges?|soars?|spikes?|rises?|rall(y|ies)|climbs?|gains?|falls?|slips?|slides?|drops?|tumbles?|plunges?|slumps?|eases?|sinks?))"],
          impacts={"Upstream Oil & Gas": 2, "Oil Marketing (OMC)": -2, "Paints": -2, "Aviation": -2, "Tyres": -1, "Chemicals": -1, "Broad Market": -1},
          why="Rising crude helps producers (ONGC, Oil India) but hurts OMC marketing margins and crude-derivative users (paints, aviation, tyres, chemicals) and widens India's trade deficit."),
     dict(id="opec_cut", category="Commodity", name="OPEC+ production decision", severity=6, directional=False,

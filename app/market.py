@@ -1,16 +1,18 @@
-"""Price context from Yahoo Finance (yfinance): day change, 5-day change,
-20-day realised volatility, volume spike. Optional - the app works without it."""
+"""Price context from Yahoo Finance (yfinance): last price, day change, 5-day change,
+20-day realised volatility, volume spike. Optional - the app works without it.
+Yahoo's NSE data may be delayed; the dashboard labels prices accordingly."""
 import logging
 import math
 
 from . import db
+from .config import MACRO_TICKERS
 from .rules import SECTORS
 
 log = logging.getLogger("market")
 
 
 def yf_ticker(symbol: str) -> str:
-    return symbol if symbol.startswith("^") else f"{symbol}.NS"
+    return symbol if symbol.startswith("^") or "=" in symbol else f"{symbol}.NS"
 
 
 def refresh(symbols: list[str]):
@@ -19,7 +21,7 @@ def refresh(symbols: list[str]):
     except ImportError:
         db.set_source_status("Yahoo Finance prices", False, 0, "yfinance not installed")
         return
-    indices = [t for t, _ in SECTORS.values() if t]
+    indices = [t for t, _ in SECTORS.values() if t] + list(MACRO_TICKERS)
     tickers = sorted({yf_ticker(s) for s in symbols} | set(indices))
     try:
         data = yf.download(tickers, period="3mo", interval="1d", group_by="ticker",
@@ -37,16 +39,19 @@ def refresh(symbols: list[str]):
             rets = close.pct_change().dropna()
             vol20 = float(rets.tail(20).std() * math.sqrt(252) * 100)
             vol60 = float(rets.tail(60).std() * math.sqrt(252) * 100)
-            v = df["Volume"]
-            vol_ratio = float(v.iloc[-1] / v.tail(21).iloc[:-1].mean()) if v.tail(21).iloc[:-1].mean() else None
+            v = df["Volume"].fillna(0)
+            base = float(v.tail(21).iloc[:-1].mean())
+            vol_ratio = float(v.iloc[-1]) / base if base > 0 else None
             sym = t[:-3] if t.endswith(".NS") else t
             db.save_market(sym, {
                 "price": round(float(close.iloc[-1]), 2),
+                "prev": round(float(close.iloc[-2]), 2),
                 "chg_1d": round(float(close.iloc[-1] / close.iloc[-2] - 1) * 100, 2),
                 "chg_5d": round(float(close.iloc[-1] / close.iloc[-6] - 1) * 100, 2),
                 "rv20": round(vol20, 1), "rv60": round(vol60, 1),
                 "vol_regime": round(vol20 / vol60, 2) if vol60 else None,   # >1.2 = volatility expanding
                 "volume_x": round(vol_ratio, 2) if vol_ratio else None,
+                "asof": str(df.index[-1].date()),
                 "spark": [round(float(x), 2) for x in close.tail(30)],
             })
             ok += 1

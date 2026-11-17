@@ -12,15 +12,18 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, Request
+from fastapi import Body, FastAPI, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import aggregate, analyzer, db, earnings, market, sentiment, sources
-from .config import BASE_DIR, MIN_IMPACT, REFRESH_MINUTES
+from . import aggregate, alerts, analyzer, db, earnings, market, sentiment, sources
+from .config import BASE_DIR, EARNINGS_REFRESH_HOURS, MACRO_TICKERS, MIN_IMPACT, REFRESH_MINUTES
+from .rules import COMPANIES
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("main")
+for _noisy in ("urllib3.connectionpool", "yfinance", "peewee", "httpx", "httpx2"):
+    logging.getLogger(_noisy).setLevel(logging.CRITICAL)  # failures still show on the System page
 _refresh_lock = threading.Lock()
 _stop = threading.Event()
 
@@ -34,14 +37,28 @@ def refresh_all():
         items = sources.fetch_all()
         fresh = [it for it in items if not db.article_exists(it["id"])]
         mls = sentiment.score([it["title"] for it in fresh])  # FinBERT, if installed
+        analysed = []
         for it, ml in zip(fresh, mls):
             a = analyzer.analyze(it["title"], it["summary"], it["kind"], ml)
             db.save_article(it | {"impact": a["score"], "analysis": a, "ml": ml})
+            analysed.append((it, a))
         log.info("fetched %d articles (%d new)", len(items), len(fresh))
-        earnings.refresh()
-        syms = {r["symbol"] for r in aggregate.volatility(24, 60)}
-        syms |= {r["symbol"] for r in aggregate.upcoming_earnings(7) if r["tracked"]}
+        try:
+            alerts.from_articles(analysed)
+        except Exception as ex:
+            log.exception("news alerts failed: %s", ex)
+        last_e = db.get_meta("last_earnings_refresh")
+        if not last_e or (datetime.now(timezone.utc) - datetime.fromisoformat(last_e)).total_seconds() > EARNINGS_REFRESH_HOURS * 3600:
+            earnings.refresh()
+            db.set_meta("last_earnings_refresh", datetime.now(timezone.utc).isoformat())
+        watch = db.get_watchlist()
+        news_syms = {r["symbol"] for r in aggregate.volatility(24, 60)}
+        syms = news_syms | set(watch) | {r["symbol"] for r in aggregate.upcoming_earnings(7) if r["tracked"]}
         market.refresh(sorted(syms))
+        try:
+            alerts.from_prices(sorted(set(watch) | {r["symbol"] for r in aggregate.volatility(24, 25)}))
+        except Exception as ex:
+            log.exception("price alerts failed: %s", ex)
         db.set_meta("last_refresh", datetime.now(timezone.utc).isoformat())
         log.info("refresh done in %.1fs", time.time() - t0)
         return {"status": "ok", "fetched": len(items), "new": len(fresh)}
@@ -126,10 +143,17 @@ def index():
 
 @app.get("/api/dashboard")
 def dashboard(hours: int = 24):
+    mk = db.get_market()
     return {
+        "server_time": datetime.now(timezone.utc).isoformat(),
         "last_refresh": db.get_meta("last_refresh"),
+        "refresh_minutes": REFRESH_MINUTES,
         "refreshing": db.get_meta("refreshing") == "1",
         "finbert_enabled": sentiment.available(),
+        "telegram_enabled": alerts.telegram_configured(),
+        "macro": [{"symbol": k, "name": v, **(mk.get(k) or {})} for k, v in MACRO_TICKERS.items()],
+        "watchlist": db.get_watchlist(),
+        "latest_alert_id": db.latest_alert_id(),
         "mood": aggregate.mood(hours),
         "sectors": aggregate.sectors(hours),
         "volatility": aggregate.volatility(hours, 30),
@@ -141,8 +165,39 @@ def dashboard(hours: int = 24):
 
 
 @app.get("/api/news")
-def news(hours: int = 24, min_impact: float = MIN_IMPACT, category: str = "", q: str = "", kind: str = ""):
-    return aggregate.news(hours, min_impact, category, q, kind)
+def news(hours: int = 24, min_impact: float = MIN_IMPACT, category: str = "", q: str = "", kind: str = "",
+         sort: str = "time", watchlist: bool = False, limit: int = 300):
+    return aggregate.news(hours, min_impact, category, q, kind, sort,
+                          db.get_watchlist() if watchlist else None)[:limit]
+
+
+@app.get("/api/alerts")
+def get_alerts(since: int = 0, limit: int = 100):
+    return db.get_alerts(since, limit)
+
+
+@app.post("/api/alerts/test")
+def test_alert():
+    return alerts.test_alert()
+
+
+@app.get("/api/watchlist")
+def get_watchlist():
+    return {"symbols": db.get_watchlist(), "known": sorted({c[0] for c in COMPANIES})}
+
+
+@app.post("/api/watchlist")
+def set_watchlist(payload: dict = Body(...)):
+    db.set_watchlist([str(s) for s in payload.get("symbols", [])])
+    threading.Thread(target=_prices_for_watchlist, daemon=True).start()
+    return {"symbols": db.get_watchlist()}
+
+
+def _prices_for_watchlist():
+    try:
+        market.refresh(db.get_watchlist())
+    except Exception as ex:
+        log.warning("watchlist price refresh failed: %s", ex)
 
 
 @app.get("/api/volatility")

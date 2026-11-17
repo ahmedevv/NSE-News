@@ -3,6 +3,7 @@ import hashlib
 import html
 import logging
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -45,10 +46,19 @@ def _published(entry) -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Feeds that rate-limit us (HTTP 429) or keep failing are skipped for a while instead of hammered
+_backoff: dict[str, float] = {}
+
+
 def fetch_feed(name: str, url: str, kind: str) -> list[dict]:
+    if _backoff.get(name, 0) > time.time():
+        return []
     try:
         r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=20)
+        if r.status_code == 429:
+            _backoff[name] = time.time() + 20 * 60
         r.raise_for_status()
+        _backoff.pop(name, None)
         parsed = feedparser.parse(r.content)
         cutoff = datetime.now(timezone.utc) - timedelta(hours=MAX_AGE_HOURS)
         items = []
@@ -57,6 +67,7 @@ def fetch_feed(name: str, url: str, kind: str) -> list[dict]:
             if not title:
                 continue
             src = name
+            title = re.sub(r"\s*\|\s*(Tap to know more|Read more|Watch video)\b.*$", "", title, flags=re.I)
             if "news.google.com" in url:
                 m = re.match(r"^(.*?)\s*-\s+([^-]{2,60})$", title) or re.match(r"^(.*?\S)-\s*([A-Za-z][\w .]{1,40}\.(?:com|in|net|org))$", title)
                 if m:
@@ -74,6 +85,7 @@ def fetch_feed(name: str, url: str, kind: str) -> list[dict]:
         return items
     except Exception as ex:  # network errors, 403s, bad XML ...
         log.warning("feed %s failed: %s", name, ex)
+        _backoff.setdefault(name, time.time() + 10 * 60)  # DNS / connection errors: retry in 10 min
         db.set_source_status(name, False, 0, str(ex))
         return []
 

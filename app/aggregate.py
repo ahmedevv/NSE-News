@@ -43,7 +43,8 @@ def _weighted(hours: int):
         yield a, e, _decay(a["published"]) * e["score"] / seen[key] ** 0.5
 
 
-def news(hours: int = 24, min_impact: float = MIN_IMPACT, category: str = "", q: str = "", kind: str = "") -> list[dict]:
+def news(hours: int = 24, min_impact: float = MIN_IMPACT, category: str = "", q: str = "", kind: str = "",
+         sort: str = "impact", symbols: list[str] | None = None) -> list[dict]:
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     out, seen = [], set()
     for a in db.recent_articles(since, min_impact):
@@ -54,12 +55,17 @@ def news(hours: int = 24, min_impact: float = MIN_IMPACT, category: str = "", q:
             continue
         if q and q.lower() not in (a["title"] + " " + (a["summary"] or "")).lower():
             continue
+        if symbols is not None and not {s["symbol"] for s in e["stocks"]} & set(symbols):
+            continue
         key = re.sub(r"[^a-z0-9]", "", a["title"].lower())[:60]
         if key in seen:
             continue
         seen.add(key)
         out.append({k: a[k] for k in ("id", "title", "link", "source", "kind", "published", "summary")} | {"a": e})
-    out.sort(key=lambda x: (x["a"]["score"], x["published"]), reverse=True)
+    if sort == "time":
+        out.sort(key=lambda x: x["published"], reverse=True)
+    else:
+        out.sort(key=lambda x: (x["a"]["score"], x["published"]), reverse=True)
     return out
 
 

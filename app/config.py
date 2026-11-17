@@ -7,8 +7,27 @@ DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 DB_PATH = DATA_DIR / "news.db"
 
-# How often the background job re-scrapes everything (minutes)
-REFRESH_MINUTES = int(os.getenv("REFRESH_MINUTES", "30"))
+# How often news + prices are refreshed (minutes). Earnings calendars refresh every EARNINGS_REFRESH_HOURS.
+REFRESH_MINUTES = max(2, int(os.getenv("REFRESH_MINUTES", "5")))
+EARNINGS_REFRESH_HOURS = float(os.getenv("EARNINGS_REFRESH_HOURS", "6"))
+
+# ---- alerts
+ALERT_MIN_IMPACT = float(os.getenv("ALERT_MIN_IMPACT", "7"))        # impact >= this -> "high" alert
+ALERT_CRITICAL_IMPACT = float(os.getenv("ALERT_CRITICAL_IMPACT", "8"))  # impact >= this -> "critical"
+ALERT_MAX_AGE_MINUTES = int(os.getenv("ALERT_MAX_AGE_MINUTES", "90"))   # don't alert on old stories
+ALERT_COOLDOWN_MINUTES = int(os.getenv("ALERT_COOLDOWN_MINUTES", "90"))  # same driver re-alerts at most this often
+MOVE_ALERT_PCT = float(os.getenv("MOVE_ALERT_PCT", "3"))            # stock moves >= this % in a day -> alert
+VIX_ALERT_PCT = float(os.getenv("VIX_ALERT_PCT", "8"))              # India VIX jumps >= this % -> alert
+# Optional phone alerts via a Telegram bot (see README)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_MIN_LEVEL = os.getenv("TELEGRAM_MIN_LEVEL", "high").strip().lower()  # watch | high | critical
+
+# Macro instruments shown in the top bar (Yahoo Finance symbols -> display name)
+MACRO_TICKERS = {
+    "^NSEI": "Nifty 50", "^NSEBANK": "Bank Nifty", "^INDIAVIX": "India VIX", "USDINR=X": "USD/INR",
+    "BZ=F": "Brent", "GC=F": "Gold", "^GSPC": "S&P 500",
+}
 # Ignore articles older than this many hours
 MAX_AGE_HOURS = int(os.getenv("MAX_AGE_HOURS", "48"))
 # Drop articles whose rule-based impact score is below this (0-10)

@@ -3,138 +3,227 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NSE News Impact</title>
+<title>NSE Wire</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand">
-    <span class="logo">◆</span>
-    <div>
-      <h1>NSE News Impact</h1>
-      <p class="sub">Market &amp; geopolitical news → sectors → stocks to watch</p>
-    </div>
+
+<header class="bar">
+  <div class="brand"><span class="mark" aria-hidden="true"></span>NSE Wire</div>
+  <div class="session" id="session" title="NSE cash session 09:15 to 15:30 IST, Monday to Friday. Exchange holidays are not tracked.">
+    <span class="session-state" id="sessionState">–</span>
+    <span class="session-clock" id="sessionClock">--:--:--</span>
+    <span class="session-next" id="sessionNext"></span>
   </div>
-  <div class="controls">
-    <label>Window
-      <select id="hours">
-        <option value="12">12h</option>
-        <option value="24" selected>24h</option>
-        <option value="48">48h</option>
-      </select>
-    </label>
-    <span id="status" class="muted"></span>
-    <button id="refreshBtn" class="btn">Refresh now</button>
+  <div class="quotes" id="quotes" aria-label="Market indicators"></div>
+  <div class="bar-right">
+    <div class="feed" id="feed" title="News and prices are checked automatically">
+      <span class="dot" aria-hidden="true"></span><span id="feedText">Connecting</span>
+    </div>
+    <button class="btn-quiet" id="soundBtn" aria-pressed="true" title="Alert sound">Sound on</button>
+    <button class="btn-alerts" id="alertBtn">Alerts <span class="count" id="alertCount" hidden>0</span></button>
   </div>
 </header>
 
-<nav class="tabs" id="tabs">
-  <button data-tab="overview" class="active">Overview</button>
-  <button data-tab="volatility">Volatility watchlist</button>
-  <button data-tab="news">News feed</button>
-  <button data-tab="sectors">Sectors</button>
-  <button data-tab="earnings">Earnings</button>
-  <button data-tab="sources">Sources</button>
+<div class="banner" id="banner" role="alert" hidden>
+  <span class="banner-level" id="bannerLevel">Critical</span>
+  <span class="banner-time" id="bannerTime"></span>
+  <span class="banner-title" id="bannerTitle"></span>
+  <span class="banner-body" id="bannerBody"></span>
+  <button class="banner-close" id="bannerClose" aria-label="Dismiss alert">Dismiss</button>
+</div>
+
+<div class="strip" id="strip" aria-label="Sector indices today"></div>
+
+<nav class="views" id="views" aria-label="Views">
+  <button data-view="monitor" class="on"><kbd>1</kbd>Monitor</button>
+  <button data-view="news"><kbd>2</kbd>News</button>
+  <button data-view="vol"><kbd>3</kbd>Volatility</button>
+  <button data-view="sectors"><kbd>4</kbd>Sectors</button>
+  <button data-view="earnings"><kbd>5</kbd>Earnings</button>
+  <button data-view="alerts"><kbd>6</kbd>Alerts and watchlist</button>
+  <button data-view="system"><kbd>7</kbd>System</button>
+  <button class="refresh" id="refreshBtn" title="Check all sources now">Check now</button>
 </nav>
 
 <main>
-  <!-- OVERVIEW -->
-  <section id="tab-overview" class="tab active">
-    <div class="grid kpis" id="kpis"></div>
-    <div class="grid two">
-      <div class="card">
-        <div class="card-h"><h2>Sector heatmap</h2><span class="muted small">net news pressure, decayed by age</span></div>
-        <div id="heatmap" class="heatmap"></div>
+  <!-- MONITOR -->
+  <section class="view monitor on" id="v-monitor">
+    <div class="pane wire-pane">
+      <div class="pane-head">
+        <h2>News wire</h2>
+        <div class="seg" id="wireFilter" role="group" aria-label="Filter news">
+          <button data-f="all" class="on">All</button>
+          <button data-f="high">High impact</button>
+          <button data-f="india">India</button>
+          <button data-f="global">Global</button>
+          <button data-f="watch">Watchlist</button>
+        </div>
+        <input class="search" id="wireSearch" type="search" placeholder="Search  /" aria-label="Search headlines">
       </div>
-      <div class="card">
-        <div class="card-h"><h2>Most volatile assets (news-driven)</h2><a href="#" data-goto="volatility" class="small">see all →</a></div>
-        <div id="volMini"></div>
-      </div>
+      <ol class="wire" id="wire"></ol>
     </div>
-    <div class="grid two">
-      <div class="card">
-        <div class="card-h"><h2>Top market-moving news</h2><a href="#" data-goto="news" class="small">see all →</a></div>
-        <div id="topNews"></div>
-      </div>
-      <div class="card">
-        <div class="card-h"><h2>Earnings this week</h2><a href="#" data-goto="earnings" class="small">see all →</a></div>
-        <div id="earnMini"></div>
-        <div class="card-h" style="margin-top:14px"><h2>Analyze any headline</h2></div>
-        <form id="tryForm" class="try">
-          <input id="tryText" placeholder="e.g. Crude oil jumps 4% after OPEC+ extends output cuts">
-          <button class="btn">Analyze</button>
-        </form>
-        <div id="tryOut"></div>
-      </div>
-    </div>
-  </section>
 
-  <!-- VOLATILITY -->
-  <section id="tab-volatility" class="tab">
-    <div class="card">
-      <div class="card-h">
-        <h2>Volatility watchlist</h2>
-        <span class="muted small">Score = news intensity × impact × recency (+ upcoming earnings, + expanding realised vol). Bias = net direction of the news.</span>
+    <div class="side">
+      <div class="pane">
+        <div class="pane-head"><h2>Latest alerts</h2><button class="link" data-goto="alerts">Alert log</button></div>
+        <ol class="alerts" id="alertsMini"></ol>
       </div>
-      <div class="table-wrap"><table id="volTable"></table></div>
+      <div class="pane">
+        <div class="pane-head"><h2>Volatility watch</h2><span class="hint">ranked by news pressure</span><button class="link" data-goto="vol">Full list</button></div>
+        <div class="tbl-wrap"><table class="tbl" id="volMini"></table></div>
+      </div>
+      <div class="pair">
+        <div class="pane">
+          <div class="pane-head"><h2>Sector pressure</h2><button class="link" data-goto="sectors">All sectors</button></div>
+          <ol class="sectors" id="secMini"></ol>
+        </div>
+        <div class="pane">
+          <div class="pane-head"><h2>Results this week</h2><button class="link" data-goto="earnings">Calendar</button></div>
+          <div id="earnMini"></div>
+        </div>
+      </div>
     </div>
   </section>
 
   <!-- NEWS -->
-  <section id="tab-news" class="tab">
-    <div class="card">
-      <div class="filters">
-        <input id="q" placeholder="Search headlines…">
-        <select id="cat">
+  <section class="view" id="v-news">
+    <div class="pane">
+      <div class="pane-head wrap">
+        <h2>All news</h2>
+        <input class="search" id="newsSearch" type="search" placeholder="Search headlines" aria-label="Search headlines">
+        <select id="newsCat" aria-label="Category">
           <option value="">All categories</option>
           <option>Geopolitical</option><option>Macro</option><option>Commodity</option>
           <option>Policy</option><option>Sector</option><option>Corporate</option><option>General</option>
         </select>
-        <select id="kind">
-          <option value="">India + world</option>
-          <option value="market">Indian market feeds</option>
-          <option value="geo">World / geopolitics feeds</option>
+        <select id="newsKind" aria-label="Region">
+          <option value="">India and global</option><option value="market">India</option><option value="geo">Global</option>
         </select>
-        <label class="small">Min impact <input id="minImpact" type="range" min="0" max="9" step="0.5" value="2"><span id="minImpactV">2</span></label>
+        <select id="newsHours" aria-label="Time window">
+          <option value="6">Last 6 hours</option><option value="24" selected>Last 24 hours</option><option value="48">Last 48 hours</option>
+        </select>
+        <select id="newsSort" aria-label="Sort">
+          <option value="time">Newest first</option><option value="impact">Highest impact first</option>
+        </select>
+        <label class="range">Min impact <input id="newsMin" type="range" min="0" max="9" step="0.5" value="2"><output id="newsMinV">2</output></label>
       </div>
-      <div id="newsList"></div>
+      <ol class="wire" id="newsList"></ol>
+    </div>
+  </section>
+
+  <!-- VOLATILITY -->
+  <section class="view" id="v-vol">
+    <div class="pane">
+      <div class="pane-head"><h2>Volatility watch</h2>
+        <span class="hint">News pressure combines how many stories hit a stock, how big they are and how recent. Upcoming results and rising realised volatility add to it. Prices from Yahoo Finance and may be delayed.</span></div>
+      <div class="tbl-wrap"><table class="tbl" id="volTable"></table></div>
     </div>
   </section>
 
   <!-- SECTORS -->
-  <section id="tab-sectors" class="tab">
-    <div class="card">
-      <div class="card-h"><h2>Sector outlook from news</h2></div>
-      <div class="table-wrap"><table id="secTable"></table></div>
+  <section class="view" id="v-sectors">
+    <div class="pane">
+      <div class="pane-head"><h2>Sector pressure from news, last 24 hours</h2></div>
+      <div class="tbl-wrap"><table class="tbl" id="secTable"></table></div>
     </div>
   </section>
 
   <!-- EARNINGS -->
-  <section id="tab-earnings" class="tab">
-    <div class="grid two">
-      <div class="card">
-        <div class="card-h"><h2>Upcoming results (next 14 days)</h2>
-          <label class="small"><input type="checkbox" id="trackedOnly" checked> Tracked large caps only</label></div>
-        <div class="table-wrap"><table id="earnTable"></table></div>
-        <p class="muted small">Sources: NSE event calendar, BSE forthcoming results, and <code>data/earnings_manual.csv</code> (add your own rows if the exchanges block requests).</p>
+  <section class="view" id="v-earnings">
+    <div class="cols">
+      <div class="pane">
+        <div class="pane-head"><h2>Upcoming results, next 14 days</h2>
+          <label class="check"><input type="checkbox" id="trackedOnly" checked> Large caps only</label></div>
+        <div class="tbl-wrap"><table class="tbl" id="earnTable"></table></div>
+        <p class="note">From the NSE and BSE calendars. If both are blocked from your server, add dates to <code>data\earnings_manual.csv</code>.</p>
       </div>
-      <div class="card">
-        <div class="card-h"><h2>Results in the news (last 48h)</h2></div>
-        <div id="reported"></div>
+      <div class="pane">
+        <div class="pane-head"><h2>Results in the news, last 48 hours</h2></div>
+        <ol class="wire" id="reported"></ol>
       </div>
     </div>
   </section>
 
-  <!-- SOURCES -->
-  <section id="tab-sources" class="tab">
-    <div class="card">
-      <div class="card-h"><h2>Data source health</h2></div>
-      <div class="table-wrap"><table id="srcTable"></table></div>
+  <!-- ALERTS -->
+  <section class="view" id="v-alerts">
+    <div class="cols">
+      <div class="pane">
+        <div class="pane-head"><h2>Alert log</h2><button class="btn" id="testAlert">Send test alert</button></div>
+        <ol class="alerts full" id="alertLog"></ol>
+      </div>
+      <div class="stack">
+        <div class="pane">
+          <div class="pane-head"><h2>My watchlist</h2></div>
+          <p class="note">Any story naming these stocks raises an alert, and they get price-move alerts during market hours.</p>
+          <form class="watch-add" id="watchForm">
+            <input id="watchInput" list="knownSymbols" placeholder="Add NSE symbol, e.g. RELIANCE" aria-label="NSE symbol" autocomplete="off">
+            <datalist id="knownSymbols"></datalist>
+            <button class="btn">Add</button>
+          </form>
+          <ul class="watch-list" id="watchList"></ul>
+        </div>
+        <div class="pane">
+          <div class="pane-head"><h2>Where alerts reach you</h2></div>
+          <dl class="kv" id="alertChannels"></dl>
+          <button class="btn" id="notifyBtn">Turn on desktop notifications</button>
+          <p class="note" id="notifyNote"></p>
+        </div>
+        <div class="pane">
+          <div class="pane-head"><h2>What raises an alert</h2></div>
+          <dl class="kv">
+            <dt><span class="lvl critical">Critical</span></dt><dd>A new story with impact 8 or more, such as an RBI surprise, war escalation or a crude shock.</dd>
+            <dt><span class="lvl high">High</span></dt><dd>A new story with impact 7 or more.</dd>
+            <dt><span class="lvl move">Move</span></dt><dd>A stock in the news or on your watchlist moves 3% or more today.</dd>
+            <dt><span class="lvl vix">Volatility</span></dt><dd>India VIX jumps 8% or more.</dd>
+            <dt><span class="lvl watch">Watchlist</span></dt><dd>Any new story naming a stock on your watchlist.</dd>
+          </dl>
+          <p class="note">Coverage of the same driver from many outlets alerts once every 90 minutes. Thresholds can be changed in <code>settings.bat</code>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SYSTEM -->
+  <section class="view" id="v-system">
+    <div class="cols">
+      <div class="pane">
+        <div class="pane-head"><h2>Data sources</h2></div>
+        <div class="tbl-wrap"><table class="tbl" id="srcTable"></table></div>
+      </div>
+      <div class="stack">
+        <div class="pane">
+          <div class="pane-head"><h2>Test a headline</h2></div>
+          <form class="watch-add" id="tryForm">
+            <input id="tryText" placeholder="Paste any headline" aria-label="Headline to analyse">
+            <button class="btn">Analyse</button>
+          </form>
+          <div id="tryOut"></div>
+        </div>
+        <div class="pane">
+          <div class="pane-head"><h2>How to read the scores</h2></div>
+          <dl class="kv">
+            <dt>Impact 0 to 10</dt><dd>How much the story could move Indian equities. 3 is one small stock, 5 a large cap or a sector, 7 several sectors, 9 or more a market-wide shock.</dd>
+            <dt>Lean</dt><dd>Likely direction for Indian equities, not for the asset in the headline. Rising crude is bearish for India.</dd>
+            <dt>Sector arrows</dt><dd>One arrow is a mild effect, two a strong one. The ± sign means the sector is exposed but direction is unclear.</dd>
+            <dt>Top bar colours</dt><dd>Green or red shows the effect on Indian equities. A rising VIX, dollar or Brent shows in red.</dd>
+          </dl>
+        </div>
+      </div>
     </div>
   </section>
 </main>
 
-<footer class="muted small">Not investment advice. Automated reading of public headlines; verify before trading.</footer>
+<aside class="drawer" id="drawer" aria-label="Story detail" hidden>
+  <button class="drawer-close" id="drawerClose" aria-label="Close detail">Close</button>
+  <div id="drawerBody"></div>
+</aside>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>

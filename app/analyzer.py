@@ -23,7 +23,8 @@ _NEG = re.compile(NEGATIVE_WORDS, re.I)
 # Words that make an article relevant to India even if it's from a world feed
 # Features / history / opinion pieces mention big themes but rarely move prices today
 NOISE = re.compile(r"\b(1[89]\d\d|19[0-9]\d|history|historic(al)?|anniversary|explained|explainer|opinion|column|"
-                   r"what would|could end|book|film|movie|magazines?|podcast|quiz|recipe|true stories|approval rating)\b", re.I)
+                   r"what would|could end|book|film|movie|magazines?|podcast|quiz|recipe|true stories|approval rating|"
+                   r"stress(es)?|urges?|calls? for|vows?|pledges?|preparedness|self-reliance|lessons from|interview)\b", re.I)
 INDIA_HINT = re.compile(r"\b(india|indian|nifty|sensex|nse|bse|rupee|rbi|sebi|dalal street|mumbai)\b", re.I)
 
 
@@ -117,9 +118,12 @@ def analyze(title: str, summary: str = "", kind: str = "market", ml: dict | None
                 sign = -1
             if rule.get("inverted") and direction != "unclear":
                 sign = -sign
+        why = rule["why"]
+        if rule["directional"] and sign == -1:  # rule text describes the "up" case; this story is the opposite
+            why = "This story is the opposite move, so the usual effects reverse. Usual case: " + why
         events.append({
             "id": rule["id"], "name": rule["name"], "category": rule["category"],
-            "direction": direction, "why": rule["why"], "severity": rule["severity"],
+            "direction": direction, "why": why, "severity": rule["severity"],
             "in_title": in_title,
         })
         impacts = rule["impacts"]

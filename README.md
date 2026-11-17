@@ -1,26 +1,61 @@
-# NSE News Impact
+# NSE Wire
 
-A locally hosted dashboard. It scrapes Indian market news and world/geopolitical news, works out how each story is likely to move NSE sectors and stocks, and shows:
+A live news terminal for Indian equities. It watches Indian market news and world/geopolitical news, works out how each story is likely to move NSE sectors and stocks, and alerts you when something important happens.
 
-- **Overview**: a news-mood gauge, a sector heatmap, the most volatile assets, top market-moving stories, and this week's earnings.
-- **Volatility watchlist**: stocks ranked by news intensity × impact × recency. It also adds weight for upcoming results and for realised volatility that is already rising. Each stock gets a bias (bullish / bearish / two-way) and the headlines behind it.
-- **News feed**: every story with an impact score from 0 to 10, its direction, horizon, affected sectors and stocks (▲/▼), and a plain-English *expected impact*.
-- **Sectors**: net news pressure and the main drivers for each NSE sector, with the sector index's 1-day move.
-- **Earnings**: upcoming results from the NSE event calendar, BSE forthcoming results, or your own CSV, plus results currently in the news.
-- **Sources**: a health check for every feed or API, so you can see when one is blocked.
+**The Monitor screen (key 1)** has:
+- **Top bar**: Nifty 50, Bank Nifty, India VIX, USD/INR, Brent, Gold and the S&P 500, plus the NSE session clock in IST and a live indicator showing when the sources were last checked. Colours show the effect on Indian equities, so a rising VIX, dollar or Brent shows in red.
+- **News wire**: every story as it arrives, newest first, with its time in IST, impact score (0 to 10), lean for Indian equities, and the sectors and stocks it touches (▲ positive, ▼ negative, two arrows means strong). A bar on the left edge marks high-impact (dark amber) and critical (bright amber) stories. Click any story for the full read: what to expect, why, the sector effects, and stocks with prices.
+- **Latest alerts**, **Volatility watch** (stocks under the most news pressure), **Sector pressure** (net good or bad news per sector) and **Results this week**.
+
+Other screens: News (2, every story with filters), Volatility (3), Sectors (4), Earnings (5), Alerts and watchlist (6), System (7, source health and a headline tester).
+
+**Keyboard:** `1` to `7` switch screens, `/` searches the wire, `j` / `k` step through stories, `Esc` closes the detail pane or the alert banner.
+
+## Alerts
+
+News and prices are checked every 5 minutes (`REFRESH_MINUTES`). New alerts reach an open page within about 15 seconds.
+
+| Alert | When |
+|---|---|
+| Critical | A new story with impact 8 or more, such as an RBI surprise, war escalation or a crude shock |
+| High | A new story with impact 7 or more |
+| Move | A stock in the news or on your watchlist moves 3% or more today (market hours) |
+| Volatility | India VIX jumps 8% or more |
+| Watchlist | Any new story naming a stock on your watchlist |
+
+If 20 outlets cover the same driver, it alerts once, then at most every 90 minutes. Thresholds live in `settings.bat`.
+
+**Where alerts reach you:**
+- **The page**: an amber banner for critical alerts, a pop-up for each alert, a sound (toggle with "Sound on"), and a count in the browser tab title.
+- **Desktop notifications**: click "Turn on desktop notifications" on the Alerts page. Browsers only allow this on `https` or `localhost`, so it works when you open the dashboard on the VPS itself, not over `http://VPS-IP`.
+- **Telegram on your phone**: works anywhere, even with the page closed. See below.
+
+### Telegram alerts (free, about 2 minutes)
+
+1. In Telegram, open **@BotFather**, send `/newbot`, and pick a name. It replies with a **token** like `123456:ABC-DEF...`.
+2. Open your new bot in Telegram and send it any message, e.g. `hi`.
+3. In a browser, open `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates`. Find `"chat":{"id":123456789` and copy that number. That's your **chat ID**.
+4. Put both in `settings.bat`:
+   ```bat
+   set "TELEGRAM_BOT_TOKEN=123456:ABC-DEF..."
+   set "TELEGRAM_CHAT_ID=123456789"
+   ```
+5. Restart (run `install-autostart.bat` as administrator again), open **Alerts and watchlist** and click **Send test alert**. The message should arrive on your phone.
+
+`TELEGRAM_MIN_LEVEL` picks what goes to Telegram: `critical`, `high` (default: high, critical, price moves and VIX) or `watch` (everything).
 
 ## Install on a Windows VPS
 
 1. Install **Python 3.11 or newer** from python.org. In the installer, tick **"Add python.exe to PATH"** and choose **"Install for all users"**.
 2. Extract this folder to a path without spaces, e.g. `C:\nse-news`.
 3. Double-click **`setup.bat`**. It creates `.venv`, installs dependencies including FinBERT, and creates `settings.bat`. On a small VPS with 2 GB of RAM or less, run `setup.bat nofinbert` from a command prompt instead.
-4. Edit **`settings.bat`**: choose `HOST`, set a password, and turn FinBERT on or off.
+4. Edit **`settings.bat`**: choose `HOST`, set a password, turn FinBERT on or off, and optionally add Telegram alerts.
 5. Test with **`start-server.bat`**. Open http://localhost:8000 in the VPS browser. Press Ctrl+C to stop.
 6. To run permanently, right-click **`install-autostart.bat` → Run as administrator**. This creates a scheduled task that starts the server at boot without anyone logged in, restarts it if it crashes, and opens the firewall port if `HOST=0.0.0.0`.
 
 Logs are in `data\server.log`. To stop and remove auto-start, run `uninstall-autostart.bat` as administrator. After changing `settings.bat`, restart the VPS or run `install-autostart.bat` again.
 
-The app refreshes every 30 minutes (`REFRESH_MINUTES` in `settings.bat`). You can also click **Refresh now**.
+News and prices refresh every 5 minutes (`REFRESH_MINUTES` in `settings.bat`). You can also click **Check now**. Earnings calendars refresh every 6 hours.
 
 ## FinBERT sentiment model (optional, runs locally)
 
@@ -30,7 +65,7 @@ It has **one specific job: company tone.** For example, "Zomato shares sink afte
 
 It does **not** set macro direction. FinBERT calls "crude oil prices surge" *positive* because prices went up, but for India that is negative (higher import bill, squeezed OMC margins). Macro and geopolitical news therefore keeps the India-specific logic in `rules.py`.
 
-When FinBERT is confident (≥ 0.70), it decides company tone and the sentiment of company-only stories. Stories it has read show a **FinBERT · label score** badge. Set `USE_FINBERT=0` in `settings.bat` to turn it off.
+When FinBERT is confident (≥ 0.70), it decides company tone and the sentiment of company-only stories. Its reading shows at the bottom of a story's detail pane. Set `USE_FINBERT=0` in `settings.bat` to turn it off.
 
 ## How it works
 
@@ -42,12 +77,14 @@ When FinBERT is confident (≥ 0.70), it decides company tone and the sentiment 
 | `app/sentiment.py` | Optional FinBERT headline sentiment, used for company tone only |
 | `app/earnings.py` | NSE / BSE result calendars, plus `data/earnings_manual.csv` |
 | `app/market.py` | Yahoo Finance prices: 1D/5D change, 20-day realised volatility, volatility regime, volume spike |
+| `app/alerts.py` | Alert rules, noise control (cooldown per driver) and Telegram delivery |
 | `app/aggregate.py` | Builds the dashboard views. Weights fade with a 12-hour half-life, and repeat coverage of the same driver counts for progressively less. |
 
-Try the rule engine on any headline at `/api/analyze?text=...` or in the box on the Overview tab.
+Try the rule engine on any headline at `/api/analyze?text=...` or on the System screen.
 
 ## Known limitations
 
 - NSE and BSE often block automated requests with a 403. If earnings come up empty, add rows to `data/earnings_manual.csv` (`symbol,company,date,purpose`).
-- Yahoo Finance is unofficial and occasionally returns nothing. Price columns then show "–".
+- Prices come from Yahoo Finance, which is unofficial and may be delayed. If it returns nothing, prices show "–".
+- The session clock does not know NSE holidays, so on a holiday it shows "Market open" during normal hours.
 - The rule engine reads headlines only. It cannot tell whether news was already expected or priced in. This is not investment advice.
