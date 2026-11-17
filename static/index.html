@@ -24,9 +24,21 @@
       <span class="dot" aria-hidden="true"></span><span id="feedText">Connecting</span>
     </div>
     <button class="btn-quiet" id="soundBtn" aria-pressed="true" title="Alert sound">Sound on</button>
-    <button class="btn-alerts" id="alertBtn">Alerts <span class="count" id="alertCount" hidden>0</span></button>
+    <button class="btn-alerts" id="alertBtn" aria-haspopup="true" aria-expanded="false" aria-controls="notifPanel">
+      <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-6V11a7 7 0 0 0-5.5-6.84V3a1.5 1.5 0 0 0-3 0v1.16A7 7 0 0 0 5 11v5l-2 2v1h18v-1Z"/></svg>
+      Notifications <span class="count" id="alertCount" hidden>0</span></button>
   </div>
 </header>
+
+<div class="notif-panel" id="notifPanel" role="dialog" aria-label="Notifications" hidden>
+  <div class="notif-head">
+    <h2>Notifications</h2>
+    <span class="hint" id="notifSummary">All caught up</span>
+    <button class="link" id="markAllRead">Mark all as read</button>
+  </div>
+  <ol class="alerts" id="notifList"></ol>
+  <div class="notif-foot"><button class="link" id="panelSettings">Notification settings and full log</button></div>
+</div>
 
 <div class="banner" id="banner" role="alert" hidden>
   <span class="banner-level" id="bannerLevel">Critical</span>
@@ -44,7 +56,7 @@
   <button data-view="vol"><kbd>3</kbd>Volatility</button>
   <button data-view="sectors"><kbd>4</kbd>Sectors</button>
   <button data-view="earnings"><kbd>5</kbd>Earnings</button>
-  <button data-view="alerts"><kbd>6</kbd>Alerts and watchlist</button>
+  <button data-view="alerts"><kbd>6</kbd>Notifications and watchlist</button>
   <button data-view="system"><kbd>7</kbd>System</button>
   <button class="refresh" id="refreshBtn" title="Check all sources now">Check now</button>
 </nav>
@@ -69,7 +81,7 @@
 
     <div class="side">
       <div class="pane">
-        <div class="pane-head"><h2>Latest alerts</h2><button class="link" data-goto="alerts">Alert log</button></div>
+        <div class="pane-head"><h2>Latest alerts</h2><button class="link" data-goto="alerts">Full log</button></div>
         <ol class="alerts" id="alertsMini"></ol>
       </div>
       <div class="pane">
@@ -152,7 +164,7 @@
   <section class="view" id="v-alerts">
     <div class="cols">
       <div class="pane">
-        <div class="pane-head"><h2>Alert log</h2><button class="btn" id="testAlert">Send test alert</button></div>
+        <div class="pane-head"><h2>Notification log</h2><button class="btn" id="testAlert">Send test notification</button></div>
         <ol class="alerts full" id="alertLog"></ol>
       </div>
       <div class="stack">
@@ -167,9 +179,10 @@
           <ul class="watch-list" id="watchList"></ul>
         </div>
         <div class="pane">
-          <div class="pane-head"><h2>Where alerts reach you</h2></div>
-          <dl class="kv" id="alertChannels"></dl>
-          <button class="btn" id="notifyBtn">Turn on desktop notifications</button>
+          <div class="pane-head"><h2>Notification settings</h2></div>
+          <p class="note">Choose how each kind of alert reaches you on this browser. Critical and volatility pop-ups also show the amber banner at the top of the page.</p>
+          <div class="tbl-wrap"><table class="tbl prefs" id="prefTable"></table></div>
+          <button class="btn" id="notifyBtn">Allow desktop notifications</button>
           <p class="note" id="notifyNote"></p>
         </div>
         <div class="pane">

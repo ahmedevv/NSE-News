@@ -172,7 +172,7 @@ RULES = [
          impacts={"Broad Market": 1, "Aviation": 1, "Oil Marketing (OMC)": 1, "Paints": 1, "Defence": -1, "Gold & Jewellery": -1},
          why="De-escalation lowers the risk premium: crude and gold cool off, risk assets and fuel-consuming sectors recover, defence gives back gains."),
     dict(id="war_conflict", category="Geopolitical", name="War / military escalation", severity=8, directional=False,
-         patterns=[r"(?<!price )(?<!trade )(?<!cold )(?<!tariff )(?<!currency )\bwar\b(?!\s*(preparedness|games?|room|chest|of words|memorial|crimes? (trial|tribunal)|-?time|era|veterans?))",
+         patterns=[r"(?<!price )(?<!trade )(?<!cold )(?<!tariff )(?<!currency )\bwar\b(?!\s*(preparedness|games?|room|chest|of words|memorial|crimes? (trial|tribunal)|-?time|era|veterans?|-?torn|-?ravaged|zones?))(?<!post-war)(?<!pre-war)",
                    r"\b(missiles?|air ?strikes?|drone (strikes?|attacks?)|invasion|invades?|invaded|military (strikes?|escalation|action)|"
                    r"shelling|troops|bombings?|bombed|attacks? on|launch(es|ed)? (strikes?|attacks?))\b"],
          impacts={"Defence": 2, "Upstream Oil & Gas": 1, "Gold & Jewellery": 1, "Aviation": -2, "Oil Marketing (OMC)": -1, "Paints": -1, "Broad Market": -1},

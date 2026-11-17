@@ -102,7 +102,6 @@ def recently_reported(hours: int = 48) -> list[dict]:
 
 
 def volatility(hours: int = 24, limit: int = 40) -> list[dict]:
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     acc = defaultdict(lambda: {"attention": 0.0, "bias": 0.0, "news": [], "drivers": set(), "direct": 0})
     for a, e, d in _weighted(hours):
         touched = set()
@@ -156,7 +155,6 @@ def volatility(hours: int = 24, limit: int = 40) -> list[dict]:
 
 
 def sectors(hours: int = 24) -> list[dict]:
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     acc = {s: {"sector": s, "net": 0.0, "attention": 0.0, "count": 0, "reasons": defaultdict(float)} for s in SECTORS}
     for a, e, d in _weighted(hours):
         for sec in e["sectors"]:
@@ -182,7 +180,6 @@ def sectors(hours: int = 24) -> list[dict]:
 
 
 def mood(hours: int = 24) -> dict:
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     num = den = 0.0
     counts = defaultdict(int)
     for a, e, d in _weighted(hours):

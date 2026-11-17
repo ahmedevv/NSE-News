@@ -150,7 +150,6 @@ def dashboard(hours: int = 24):
         "refresh_minutes": REFRESH_MINUTES,
         "refreshing": db.get_meta("refreshing") == "1",
         "finbert_enabled": sentiment.available(),
-        "telegram_enabled": alerts.telegram_configured(),
         "macro": [{"symbol": k, "name": v, **(mk.get(k) or {})} for k, v in MACRO_TICKERS.items()],
         "watchlist": db.get_watchlist(),
         "latest_alert_id": db.latest_alert_id(),
@@ -174,6 +173,15 @@ def news(hours: int = 24, min_impact: float = MIN_IMPACT, category: str = "", q:
 @app.get("/api/alerts")
 def get_alerts(since: int = 0, limit: int = 100):
     return db.get_alerts(since, limit)
+
+
+@app.get("/api/story/{aid}")
+def story(aid: str):
+    """One article in the same shape as /api/news rows (used when a notification is clicked)."""
+    a = db.get_article(aid)
+    if not a:
+        return Response("Story not found", status_code=404)
+    return {k: a[k] for k in ("id", "title", "link", "source", "kind", "published", "summary")} | {"a": aggregate.effective(a)}
 
 
 @app.post("/api/alerts/test")

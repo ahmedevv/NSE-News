@@ -8,7 +8,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 const S = {
   dash: null, wire: [], seen: new Set(), firstWire: true,
-  alerts: [], lastAlertId: 0, unseen: 0,
+  alerts: [], lastAlertId: 0,
   view: "monitor", wireFilter: "all", selected: null,
   muted: false, watch: [], known: [],
 };
@@ -170,6 +170,7 @@ async function loadNews() {
 /* ------------------------------------------------------------------ detail drawer */
 function findStory(id) {
   if (id === "try") return S.tryRow;
+  if (S.storyCache?.has(id)) return S.storyCache.get(id);
   return S.wire.find((n) => n.id === id) || (S.newsRows || []).find((n) => n.id === id)
     || (S.dash?.top_news || []).find((n) => n.id === id) || (S.reportedRows || []).find((n) => n.id === id);
 }
@@ -295,44 +296,90 @@ function renderSources(rows) {
       <td class="r">${s.count}</td><td>${ago(s.checked_at)}</td><td class="hl-cell">${esc(s.error)}</td></tr>`).join("");
 }
 
-/* ------------------------------------------------------------------ alerts */
+/* ------------------------------------------------------------------ notification centre
+   Alerts are created on the server. The browser decides how to show each one, per level:
+   pop-up (with the amber banner for critical/volatility), sound, and desktop notification.
+   Read state and preferences live in this browser's localStorage. */
+const LEVELS = ["critical", "high", "move", "vix", "watch"];
+const DEFAULT_PREFS = { critical: { popup: true, sound: true, desktop: true }, high: { popup: true, sound: true, desktop: true },
+  move: { popup: true, sound: true, desktop: false }, vix: { popup: true, sound: true, desktop: true }, watch: { popup: true, sound: false, desktop: false } };
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("nw." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("nw." + k, JSON.stringify(v)); } catch {} },
+};
+S.prefs = JSON.parse(JSON.stringify(DEFAULT_PREFS));
+Object.entries(store.get("prefs", {})).forEach(([l, v]) => { if (S.prefs[l]) Object.assign(S.prefs[l], v); });
+S.readBase = store.get("readBase", null);      // every alert id <= this is read
+S.readIds = new Set(store.get("readIds", []));  // individually read alerts above readBase
+S.storyCache = new Map();
+const pref = (level, kind) => (S.prefs[level] || S.prefs.high)[kind];
+const isUnread = (al) => S.readBase != null && al.id > S.readBase && !S.readIds.has(al.id);
+function saveRead() { store.set("readBase", S.readBase); store.set("readIds", [...S.readIds].slice(-500)); }
+function markRead(al) { if (isUnread(al)) { S.readIds.add(al.id); saveRead(); renderAlerts(); } }
+function markAllRead() { S.readBase = Math.max(S.readBase ?? 0, S.lastAlertId); S.readIds.clear(); saveRead(); renderAlerts(); }
+
 function alertItem(al, fresh = false) {
-  return `<li class="al${fresh ? " fresh" : ""}">
+  const unread = isUnread(al);
+  return `<li class="al${unread ? " unread" : ""}${fresh ? " fresh" : ""}" data-alert="${al.id}" tabindex="0" role="button"
+      aria-label="${esc((unread ? "Unread. " : "") + (LEVEL_NAME[al.level] || al.level) + ": " + al.title)}">
     <span class="when">${istStamp(al.ts)}</span>
-    <div><span class="lvl ${esc(al.level)}">${LEVEL_NAME[al.level] || esc(al.level)}</span>
-      <div class="t">${al.link ? `<a href="${esc(al.link)}" target="_blank" rel="noopener">${esc(al.title)}</a>` : esc(al.title)}</div></div>
+    <div><span class="lvl ${esc(al.level)}">${LEVEL_NAME[al.level] || esc(al.level)}</span>${unread ? `<span class="unread-dot" aria-hidden="true"></span>` : ""}
+      <div class="t">${esc(al.title)}</div></div>
     ${al.body ? `<div class="b">${esc(al.body)}</div>` : ""}
   </li>`;
 }
 function renderAlerts(freshIds = new Set()) {
   const items = S.alerts;
-  $("#alertsMini").innerHTML = items.length ? items.slice(0, 15).map((a) => alertItem(a, freshIds.has(a.id))).join("")
-    : `<li class="empty">No alerts yet. Alerts appear here for high-impact stories, big price moves and watchlist news.</li>`;
-  $("#alertLog").innerHTML = items.length ? items.map((a) => alertItem(a, freshIds.has(a.id))).join("")
-    : `<li class="empty">No alerts yet. Use <b>Send test alert</b> to check sound, notifications and Telegram.</li>`;
+  const none = `<li class="empty">No notifications yet. They appear for high-impact stories, big price moves, India VIX spikes and watchlist news.</li>`;
+  $("#alertsMini").innerHTML = items.length ? items.slice(0, 15).map((a) => alertItem(a, freshIds.has(a.id))).join("") : none;
+  $("#alertLog").innerHTML = items.length ? items.map((a) => alertItem(a, freshIds.has(a.id))).join("") : none;
+  $("#notifList").innerHTML = items.length ? items.slice(0, 40).map((a) => alertItem(a, freshIds.has(a.id))).join("") : none;
+  const unread = items.filter(isUnread).length;
+  const c = $("#alertCount"); c.hidden = !unread; c.textContent = unread > 99 ? "99+" : unread;
+  $("#markAllRead").disabled = !unread;
+  $("#notifSummary").textContent = unread ? `${unread} unread` : "All caught up";
+  document.title = unread ? `(${unread}) NSE Wire` : "NSE Wire";
 }
-function setUnseen(n) {
-  S.unseen = n;
-  const c = $("#alertCount"); c.hidden = !n; c.textContent = n;
-  document.title = n ? `(${n}) NSE Wire` : "NSE Wire";
+
+async function openAlert(al) {
+  if (!al) return;
+  markRead(al);
+  closePanel();
+  if (al.article_id) {
+    let n = findStory(al.article_id);
+    if (!n) {
+      try { n = await api(`/api/story/${encodeURIComponent(al.article_id)}`); S.storyCache.set(n.id, n); } catch {}
+    }
+    if (n) { openDrawer(n); return; }
+  }
+  if (al.kind === "price") { showView("vol"); return; }
+  showView("alerts");
 }
+const alertById = (id) => S.alerts.find((a) => a.id === Number(id));
+
 async function pollAlerts(initial = false) {
   const rows = await api(`/api/alerts?since=${S.lastAlertId}&limit=100`);
-  if (!rows.length) return;
-  S.lastAlertId = Math.max(S.lastAlertId, ...rows.map((r) => r.id));
-  S.alerts = [...rows, ...S.alerts].slice(0, 200);
+  if (rows.length) S.lastAlertId = Math.max(S.lastAlertId, ...rows.map((r) => r.id));
+  if (S.readBase == null) { S.readBase = S.lastAlertId; saveRead(); } // first visit: past alerts count as read
+  if (!rows.length) { if (initial) renderAlerts(); return; }
+  S.alerts = [...rows, ...S.alerts].slice(0, 300);
   if (initial) { renderAlerts(); return; }
   renderAlerts(new Set(rows.map((r) => r.id)));
-  if (S.view !== "alerts") setUnseen(S.unseen + rows.length);
-  const top = rows.slice().sort((a, b) => rank(b.level) - rank(a.level))[0];
-  if (top.level === "critical" || top.level === "vix") showBanner(top);
-  rows.slice(0, 3).forEach(toast);
-  beep(top.level);
-  rows.slice(0, 3).forEach(notify);
+  deliver(rows);
   loadWire().catch(() => {});
+}
+function deliver(rows) {
+  const byRank = rows.slice().sort((a, b) => rank(b.level) - rank(a.level));
+  const bannerAl = byRank.find((a) => (a.level === "critical" || a.level === "vix") && pref(a.level, "popup"));
+  if (bannerAl) showBanner(bannerAl);
+  byRank.filter((a) => pref(a.level, "popup")).slice(0, 3).forEach(toast);
+  const loud = byRank.find((a) => pref(a.level, "sound"));
+  if (loud) beep(loud.level);
+  byRank.filter((a) => pref(a.level, "desktop")).slice(0, 3).forEach(notify);
 }
 const rank = (l) => ({ critical: 4, vix: 3, high: 2, move: 2, watch: 1 }[l] || 0);
 function showBanner(al) {
+  S.bannerAlert = al;
   $("#bannerLevel").textContent = LEVEL_NAME[al.level] || al.level;
   $("#bannerTime").textContent = istTime(al.ts) + " IST";
   $("#bannerTitle").textContent = al.title;
@@ -342,10 +389,13 @@ function showBanner(al) {
 function toast(al) {
   const t = document.createElement("div");
   t.className = `toast ${al.level}`;
-  t.innerHTML = `<span class="lvl ${esc(al.level)}">${LEVEL_NAME[al.level] || esc(al.level)}</span><div class="t">${esc(al.title)}</div>`;
-  t.onclick = () => { t.remove(); showView("alerts"); };
+  t.setAttribute("role", "button"); t.tabIndex = 0;
+  t.innerHTML = `<span class="lvl ${esc(al.level)}">${LEVEL_NAME[al.level] || esc(al.level)}</span><span class="toast-time">${istTime(al.ts)}</span>
+    <div class="t">${esc(al.title)}</div>${al.body ? `<div class="b">${esc(al.body)}</div>` : ""}`;
+  t.onclick = () => { t.remove(); openAlert(al); };
   $("#toasts").prepend(t);
-  setTimeout(() => t.remove(), 12000);
+  while ($("#toasts").children.length > 4) $("#toasts").lastElementChild.remove();
+  setTimeout(() => t.remove(), al.level === "critical" ? 30000 : 12000);
 }
 let audioCtx;
 function beep(level) {
@@ -361,26 +411,40 @@ function beep(level) {
     });
   } catch {}
 }
+// Browsers block sound until the person has interacted with the page once; unlock on the first click or key.
+["click", "keydown"].forEach((ev) => document.addEventListener(ev, () => {
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === "suspended") audioCtx.resume(); } catch {}
+}, { once: true }));
 function notify(al) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   try {
-    const n = new Notification(`${LEVEL_NAME[al.level] || al.level}: ${al.title}`, { body: al.body || "", tag: "nsewire-" + al.id });
-    n.onclick = () => { window.focus(); showView("alerts"); n.close(); };
+    const n = new Notification(`${LEVEL_NAME[al.level] || al.level}: ${al.title}`,
+      { body: al.body || "", tag: "nsewire-" + al.id, requireInteraction: al.level === "critical" });
+    n.onclick = () => { window.focus(); openAlert(al); n.close(); };
   } catch {}
 }
-function renderChannels() {
-  const d = S.dash || {};
-  const perm = !("Notification" in window) ? "Not supported by this browser"
-    : !window.isSecureContext ? "Unavailable on this address" : Notification.permission === "granted" ? "On" : Notification.permission === "denied" ? "Blocked in browser settings" : "Off";
-  $("#alertChannels").innerHTML = `
-    <dt>This page</dt><dd>On while the page is open: banner, pop-up and sound${S.muted ? " (sound is muted)" : ""}.</dd>
-    <dt>Desktop</dt><dd>${perm}</dd>
-    <dt>Telegram</dt><dd>${d.telegram_enabled ? "On" : "Off. Add a bot token and chat ID in settings.bat to get alerts on your phone."}</dd>`;
-  const btn = $("#notifyBtn"), note = $("#notifyNote");
-  btn.hidden = perm === "On" || perm.startsWith("Not");
-  note.textContent = !window.isSecureContext
-    ? "Browsers only allow desktop notifications on https or localhost addresses. Open the dashboard at http://localhost:8000 on the server, or use Telegram."
-    : "";
+
+/* bell panel */
+function openPanel() { $("#notifPanel").hidden = false; $("#alertBtn").setAttribute("aria-expanded", "true"); }
+function closePanel() { $("#notifPanel").hidden = true; $("#alertBtn").setAttribute("aria-expanded", "false"); }
+const panelOpen = () => !$("#notifPanel").hidden;
+
+/* preferences */
+function desktopState() {
+  if (!("Notification" in window)) return ["unsupported", "This browser does not support desktop notifications."];
+  if (!window.isSecureContext) return ["insecure", "Browsers only allow desktop notifications on https or localhost. Open the dashboard at http://localhost:8000 on the server to use them. Pop-ups and sound work everywhere."];
+  if (Notification.permission === "denied") return ["denied", "Desktop notifications are blocked for this site. Allow them in the browser's site settings, using the icon left of the address."];
+  if (Notification.permission === "granted") return ["granted", "Desktop notifications are allowed. They appear even when this tab is in the background."];
+  return ["default", "Allow desktop notifications to get alerts while this tab is in the background."];
+}
+function renderPrefs() {
+  const [state, note] = desktopState(), canDesktop = state === "granted";
+  $("#prefTable").innerHTML = `<tr><th>Alert</th><th>Pop-up</th><th>Sound</th><th>Desktop</th></tr>` +
+    LEVELS.map((l) => `<tr><td><span class="lvl ${l}">${LEVEL_NAME[l]}</span></td>
+      ${["popup", "sound", "desktop"].map((k) => `<td><input type="checkbox" data-pref="${l}.${k}" ${S.prefs[l][k] ? "checked" : ""}
+        ${k === "desktop" && !canDesktop ? "disabled" : ""} aria-label="${LEVEL_NAME[l]} ${k}"></td>`).join("")}</tr>`).join("");
+  $("#notifyBtn").hidden = state !== "default";
+  $("#notifyNote").textContent = note + (S.muted ? " Sound is currently muted with the button in the top bar." : "");
 }
 
 /* ------------------------------------------------------------------ watchlist */
@@ -411,7 +475,7 @@ async function loadDashboard() {
   renderReported(d.reported);
   renderSources(d.sources);
   renderWatch();
-  renderChannels();
+  renderPrefs();
   tickFeed();
 }
 
@@ -421,7 +485,6 @@ function showView(v) {
   $$("#views button[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
   $$(".view").forEach((s) => s.classList.toggle("on", s.id === `v-${v}`));
   if (v === "news") loadNews().catch(() => {});
-  if (v === "alerts") setUnseen(0);
   try { localStorage.setItem("view", v); } catch {}
 }
 $("#views").addEventListener("click", (e) => { const b = e.target.closest("button[data-view]"); if (b) showView(b.dataset.view); });
@@ -434,7 +497,8 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName);
-  if (e.key === "Escape") { if (!$("#drawer").hidden) closeDrawer(); else $("#banner").hidden = true; return; }
+  if (e.key === "Escape") { if (panelOpen()) closePanel(); else if (!$("#drawer").hidden) closeDrawer(); else $("#banner").hidden = true; return; }
+  if (e.key === "Enter" && document.activeElement?.matches("[data-alert]")) { openAlert(alertById(document.activeElement.dataset.alert)); return; }
   if (typing) return;
   if (e.key === "/") { e.preventDefault(); showView("monitor"); $("#wireSearch").focus(); return; }
   const views = ["monitor", "news", "vol", "sectors", "earnings", "alerts", "system"];
@@ -449,11 +513,22 @@ document.addEventListener("keydown", (e) => {
   }
 });
 $("#drawerClose").onclick = closeDrawer;
-$("#bannerClose").onclick = () => ($("#banner").hidden = true);
-$("#alertBtn").onclick = () => showView("alerts");
+$("#bannerClose").onclick = (e) => { e.stopPropagation(); $("#banner").hidden = true; };
+$("#banner").onclick = () => { if (S.bannerAlert) { $("#banner").hidden = true; openAlert(S.bannerAlert); } };
+$("#alertBtn").onclick = (e) => { e.stopPropagation(); panelOpen() ? closePanel() : openPanel(); };
+$("#markAllRead").onclick = (e) => { e.stopPropagation(); markAllRead(); };
+$("#panelSettings").onclick = () => { closePanel(); showView("alerts"); };
+document.addEventListener("click", (e) => { if (panelOpen() && !e.target.closest("#notifPanel, #alertBtn")) closePanel(); });
+document.addEventListener("click", (e) => {
+  const li = e.target.closest("[data-alert]"); if (li) openAlert(alertById(li.dataset.alert));
+});
+$("#prefTable").addEventListener("change", (e) => {
+  const k = e.target.dataset.pref; if (!k) return;
+  const [level, kind] = k.split("."); S.prefs[level][kind] = e.target.checked; store.set("prefs", S.prefs);
+});
 const soundBtn = $("#soundBtn");
 function paintSound() { soundBtn.setAttribute("aria-pressed", String(!S.muted)); soundBtn.textContent = S.muted ? "Sound off" : "Sound on"; }
-soundBtn.onclick = () => { S.muted = !S.muted; try { localStorage.setItem("muted", S.muted ? "1" : "0"); } catch {} paintSound(); if (!S.muted) beep("high"); renderChannels(); };
+soundBtn.onclick = () => { S.muted = !S.muted; try { localStorage.setItem("muted", S.muted ? "1" : "0"); } catch {} paintSound(); if (!S.muted) beep("high"); renderPrefs(); };
 paintSound();
 $("#wireFilter").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-f]"); if (!b) return;
@@ -473,14 +548,15 @@ $("#refreshBtn").onclick = async () => {
   setTimeout(async () => { await refreshAll(); b.disabled = false; b.textContent = "Check now"; }, 6000);
 };
 $("#testAlert").onclick = async () => {
-  const r = await api("/api/alerts/test", { method: "POST" });
-  await pollAlerts();
-  toast({ level: "test", title: `Test alert created. Telegram: ${r.telegram}.` });
+  const b = $("#testAlert"); b.disabled = true;
+  try { await api("/api/alerts/test", { method: "POST" }); await pollAlerts(); } finally { b.disabled = false; }
 };
 $("#notifyBtn").onclick = async () => {
-  if (!("Notification" in window) || !window.isSecureContext) { renderChannels(); return; }
-  await Notification.requestPermission(); renderChannels();
-  if (Notification.permission === "granted") new Notification("NSE Wire notifications are on", { body: "You will be notified of new alerts while this page is open." });
+  if ("Notification" in window && window.isSecureContext) {
+    await Notification.requestPermission();
+    if (Notification.permission === "granted") new Notification("NSE Wire desktop notifications are on", { body: "Alerts will appear here even when the tab is in the background." });
+  }
+  renderPrefs();
 };
 $("#watchForm").addEventListener("submit", (e) => {
   e.preventDefault();

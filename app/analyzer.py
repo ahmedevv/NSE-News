@@ -24,7 +24,7 @@ _NEG = re.compile(NEGATIVE_WORDS, re.I)
 # Features / history / opinion pieces mention big themes but rarely move prices today
 NOISE = re.compile(r"\b(1[89]\d\d|19[0-9]\d|history|historic(al)?|anniversary|explained|explainer|opinion|column|"
                    r"what would|could end|book|film|movie|magazines?|podcast|quiz|recipe|true stories|approval rating|"
-                   r"stress(es)?|urges?|calls? for|vows?|pledges?|preparedness|self-reliance|lessons from|interview)\b", re.I)
+                   r"stress(es)?|urges?|calls? for|vows?|pledges?|preparedness|self-reliance|lessons from|interview|archaeolog\w*|secret war|long arm)\b", re.I)
 INDIA_HINT = re.compile(r"\b(india|indian|nifty|sensex|nse|bse|rupee|rbi|sebi|dalal street|mumbai)\b", re.I)
 
 

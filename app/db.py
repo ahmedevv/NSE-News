@@ -79,6 +79,17 @@ def save_article(a: dict):
         )
 
 
+def get_article(aid: str) -> dict | None:
+    with conn() as c:
+        r = c.execute("SELECT * FROM articles WHERE id=?", (aid,)).fetchone()
+    if not r:
+        return None
+    d = dict(r)
+    d["analysis"] = json.loads(d["analysis"]) if d["analysis"] else {}
+    d["ml"] = json.loads(d["ml"]) if d.get("ml") else None
+    return d
+
+
 def recent_articles(since_iso: str, min_impact: float = 0, limit: int = 500) -> list[dict]:
     with conn() as c:
         rows = c.execute(

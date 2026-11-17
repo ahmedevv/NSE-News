@@ -22,12 +22,7 @@ set "ALERT_MIN_IMPACT=7"
 set "ALERT_CRITICAL_IMPACT=8"
 REM A stock moving this many % in a day (during market hours) raises a price-move alert
 set "MOVE_ALERT_PCT=3"
-
-REM Phone alerts via Telegram (optional, free). See README "Telegram alerts" for the 2-minute setup.
-set "TELEGRAM_BOT_TOKEN="
-set "TELEGRAM_CHAT_ID="
-REM Which alerts go to Telegram: watch (everything), high (high + critical + price moves), critical
-set "TELEGRAM_MIN_LEVEL=high"
+REM How alerts are shown (pop-up, sound, desktop) is set per browser on the dashboard's Notifications page.
 
 REM FinBERT financial-sentiment model (Hugging Face, runs locally on CPU; ~440 MB download on first run).
 REM 1 = use it (if setup installed it), 0 = rule engine only (saves about 1 GB of RAM).

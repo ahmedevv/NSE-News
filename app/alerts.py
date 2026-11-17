@@ -8,17 +8,15 @@ Creates an alert when:
 
 Noise control: only stories published in the last ALERT_MAX_AGE_MINUTES, and the same driver
 (e.g. "crude oil") alerts at most once per ALERT_COOLDOWN_MINUTES however many outlets cover it.
-Alerts appear in the dashboard (with sound + desktop notification) and optionally on Telegram.
+Alerts are delivered by the website's notification centre (pop-up, sound, desktop notification).
 """
-import html
 import logging
 from datetime import datetime, timedelta, timezone
 
-import requests
 
 from . import db
 from .config import (ALERT_COOLDOWN_MINUTES, ALERT_CRITICAL_IMPACT, ALERT_MAX_AGE_MINUTES, ALERT_MIN_IMPACT,
-                     MOVE_ALERT_PCT, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_MIN_LEVEL, VIX_ALERT_PCT)
+                     MOVE_ALERT_PCT, VIX_ALERT_PCT)
 
 log = logging.getLogger("alerts")
 RANK = {"watch": 1, "move": 2, "high": 2, "vix": 3, "critical": 3}
@@ -112,45 +110,11 @@ def from_prices(candidates: list[str]):
 def _emit(level, kind, title, body, symbols, sectors, link, key, article_id="", sentiment=""):
     aid = db.add_alert(level, kind, title, body, symbols, sectors, link, key, article_id)
     log.info("ALERT %s: %s", level, title)
-    if RANK.get(level, 0) >= RANK.get(TELEGRAM_MIN_LEVEL, 2):
-        send_telegram(level, title, body, link, sentiment)
     return aid
 
 
-def telegram_configured() -> bool:
-    return bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
-
-
-def send_telegram(level: str, title: str, body: str, link: str = "", sentiment: str = "") -> str:
-    """Returns "" on success, else the error message."""
-    if not telegram_configured():
-        return "Telegram is not configured"
-    label = {"critical": "CRITICAL", "high": "High impact", "watch": "Watchlist", "move": "Price move",
-             "vix": "Volatility", "test": "Test"}.get(level, level)
-    lean = f" ({sentiment})" if sentiment in ("bullish", "bearish") else ""
-    text = f"<b>{html.escape(label)}{html.escape(lean)}</b>\n{html.escape(title)}"
-    if body:
-        text += f"\n\n{html.escape(body)}"
-    if link:
-        text += f'\n\n<a href="{html.escape(link, quote=True)}">Read the story</a>'
-    try:
-        r = requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                          data={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML",
-                                "disable_web_page_preview": "true"}, timeout=15)
-        if r.status_code != 200:
-            err = r.json().get("description", r.text[:200]) if r.headers.get("content-type", "").startswith("application/json") else r.text[:200]
-            db.set_source_status("Telegram alerts", False, 0, err)
-            return err
-        db.set_source_status("Telegram alerts", True, 1)
-        return ""
-    except Exception as ex:
-        db.set_source_status("Telegram alerts", False, 0, str(ex))
-        return str(ex)
-
-
 def test_alert() -> dict:
-    title = "Test alert: if you can see this, alerts are working"
+    title = "Test notification: alerts are working"
     body = "Real alerts show the story, the sectors under pressure or support, and the stocks involved."
-    db.add_alert("high", "test", title, body, [], [], "", f"test:{datetime.now(timezone.utc).isoformat()}")
-    err = send_telegram("test", title, body) if telegram_configured() else None
-    return {"dashboard": True, "telegram": "not configured" if err is None else ("sent" if not err else err)}
+    aid = db.add_alert("high", "test", title, body, [], [], "", f"test:{datetime.now(timezone.utc).isoformat()}")
+    return {"id": aid}

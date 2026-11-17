@@ -18,16 +18,13 @@ ALERT_MAX_AGE_MINUTES = int(os.getenv("ALERT_MAX_AGE_MINUTES", "90"))   # don't 
 ALERT_COOLDOWN_MINUTES = int(os.getenv("ALERT_COOLDOWN_MINUTES", "90"))  # same driver re-alerts at most this often
 MOVE_ALERT_PCT = float(os.getenv("MOVE_ALERT_PCT", "3"))            # stock moves >= this % in a day -> alert
 VIX_ALERT_PCT = float(os.getenv("VIX_ALERT_PCT", "8"))              # India VIX jumps >= this % -> alert
-# Optional phone alerts via a Telegram bot (see README)
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
-TELEGRAM_MIN_LEVEL = os.getenv("TELEGRAM_MIN_LEVEL", "high").strip().lower()  # watch | high | critical
 
 # Macro instruments shown in the top bar (Yahoo Finance symbols -> display name)
 MACRO_TICKERS = {
     "^NSEI": "Nifty 50", "^NSEBANK": "Bank Nifty", "^INDIAVIX": "India VIX", "USDINR=X": "USD/INR",
     "BZ=F": "Brent", "GC=F": "Gold", "^GSPC": "S&P 500",
 }
+
 # Ignore articles older than this many hours
 MAX_AGE_HOURS = int(os.getenv("MAX_AGE_HOURS", "48"))
 # Drop articles whose rule-based impact score is below this (0-10)
