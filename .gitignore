@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Runtime data (database, logs, downloaded FinBERT model, your manual earnings list)
+data/
+
+# Personal settings (may contain your dashboard password) - settings.example.bat is the template
+settings.bat
+
+# Build artifact
+*.zip

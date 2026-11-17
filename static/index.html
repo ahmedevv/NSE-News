@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NSE News Impact</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">◆</span>
+    <div>
+      <h1>NSE News Impact</h1>
+      <p class="sub">Market &amp; geopolitical news → sectors → stocks to watch</p>
+    </div>
+  </div>
+  <div class="controls">
+    <label>Window
+      <select id="hours">
+        <option value="12">12h</option>
+        <option value="24" selected>24h</option>
+        <option value="48">48h</option>
+      </select>
+    </label>
+    <span id="status" class="muted"></span>
+    <button id="refreshBtn" class="btn">Refresh now</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="volatility">Volatility watchlist</button>
+  <button data-tab="news">News feed</button>
+  <button data-tab="sectors">Sectors</button>
+  <button data-tab="earnings">Earnings</button>
+  <button data-tab="sources">Sources</button>
+</nav>
+
+<main>
+  <!-- OVERVIEW -->
+  <section id="tab-overview" class="tab active">
+    <div class="grid kpis" id="kpis"></div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-h"><h2>Sector heatmap</h2><span class="muted small">net news pressure, decayed by age</span></div>
+        <div id="heatmap" class="heatmap"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Most volatile assets (news-driven)</h2><a href="#" data-goto="volatility" class="small">see all →</a></div>
+        <div id="volMini"></div>
+      </div>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <div class="card-h"><h2>Top market-moving news</h2><a href="#" data-goto="news" class="small">see all →</a></div>
+        <div id="topNews"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Earnings this week</h2><a href="#" data-goto="earnings" class="small">see all →</a></div>
+        <div id="earnMini"></div>
+        <div class="card-h" style="margin-top:14px"><h2>Analyze any headline</h2></div>
+        <form id="tryForm" class="try">
+          <input id="tryText" placeholder="e.g. Crude oil jumps 4% after OPEC+ extends output cuts">
+          <button class="btn">Analyze</button>
+        </form>
+        <div id="tryOut"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- VOLATILITY -->
+  <section id="tab-volatility" class="tab">
+    <div class="card">
+      <div class="card-h">
+        <h2>Volatility watchlist</h2>
+        <span class="muted small">Score = news intensity × impact × recency (+ upcoming earnings, + expanding realised vol). Bias = net direction of the news.</span>
+      </div>
+      <div class="table-wrap"><table id="volTable"></table></div>
+    </div>
+  </section>
+
+  <!-- NEWS -->
+  <section id="tab-news" class="tab">
+    <div class="card">
+      <div class="filters">
+        <input id="q" placeholder="Search headlines…">
+        <select id="cat">
+          <option value="">All categories</option>
+          <option>Geopolitical</option><option>Macro</option><option>Commodity</option>
+          <option>Policy</option><option>Sector</option><option>Corporate</option><option>General</option>
+        </select>
+        <select id="kind">
+          <option value="">India + world</option>
+          <option value="market">Indian market feeds</option>
+          <option value="geo">World / geopolitics feeds</option>
+        </select>
+        <label class="small">Min impact <input id="minImpact" type="range" min="0" max="9" step="0.5" value="2"><span id="minImpactV">2</span></label>
+      </div>
+      <div id="newsList"></div>
+    </div>
+  </section>
+
+  <!-- SECTORS -->
+  <section id="tab-sectors" class="tab">
+    <div class="card">
+      <div class="card-h"><h2>Sector outlook from news</h2></div>
+      <div class="table-wrap"><table id="secTable"></table></div>
+    </div>
+  </section>
+
+  <!-- EARNINGS -->
+  <section id="tab-earnings" class="tab">
+    <div class="grid two">
+      <div class="card">
+        <div class="card-h"><h2>Upcoming results (next 14 days)</h2>
+          <label class="small"><input type="checkbox" id="trackedOnly" checked> Tracked large caps only</label></div>
+        <div class="table-wrap"><table id="earnTable"></table></div>
+        <p class="muted small">Sources: NSE event calendar, BSE forthcoming results, and <code>data/earnings_manual.csv</code> (add your own rows if the exchanges block requests).</p>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Results in the news (last 48h)</h2></div>
+        <div id="reported"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SOURCES -->
+  <section id="tab-sources" class="tab">
+    <div class="card">
+      <div class="card-h"><h2>Data source health</h2></div>
+      <div class="table-wrap"><table id="srcTable"></table></div>
+    </div>
+  </section>
+</main>
+
+<footer class="muted small">Not investment advice. Automated reading of public headlines; verify before trading.</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

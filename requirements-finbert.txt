@@ -1,0 +1,5 @@
+# Optional: FinBERT financial-sentiment model (Hugging Face). Installed by setup.bat unless you run "setup.bat nofinbert".
+# CPU-only PyTorch build (much smaller than the default CUDA build; a VPS has no GPU anyway).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.2
+transformers>=4.40
