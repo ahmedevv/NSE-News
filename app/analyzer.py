@@ -87,14 +87,8 @@ def _tone(text: str) -> int:
     return (pos > neg) - (neg > pos)
 
 
-FINBERT_MIN_CONF = 0.70  # below this, FinBERT's opinion is ignored
-
-
-def analyze(title: str, summary: str = "", kind: str = "market", ml: dict | None = None) -> dict:
-    """ml = optional FinBERT result for the title: {"label": positive|negative|neutral, "score": 0-1}."""
+def analyze(title: str, summary: str = "", kind: str = "market") -> dict:
     text = f"{title}. {summary or ''}"
-    fb = ml if ml and ml.get("score", 0) >= FINBERT_MIN_CONF else None
-    fb_tone = {"positive": 1, "negative": -1}.get(fb["label"], 0) if fb else 0
     title_l = title or ""
     events, sector_fx = [], {}
 
@@ -143,19 +137,13 @@ def analyze(title: str, summary: str = "", kind: str = "market", ml: dict | None
 
     # company mentions
     stocks = []
-    # Company tone: FinBERT (trained on financial news) when confident, else the keyword list
-    if fb_tone:
-        tone, strength, tone_src = fb_tone, (2 if fb["score"] >= 0.85 else 1), f"FinBERT {fb['label']} {fb['score']:.2f}"
-    else:
-        tone, strength, tone_src = _tone(text), 2, "keywords"
+    tone, strength = _tone(text), 2
     for sym, sector, pats in _compiled_companies():
         if any(p.search(text) for p in pats):
             sfx = sector_fx.get(sector, {}).get("effect", 0)
             effect = tone * strength if tone else (1 if sfx > 0 else -1 if sfx < 0 else 0)
             reason = ("Positive news flow" if effect > 0 else "Negative news flow" if effect < 0
                       else "In the news - direction unclear")
-            if tone:
-                reason += f" ({tone_src})"
             stocks.append({"symbol": sym, "sector": sector, "effect": effect, "direct": True, "reason": reason})
             sector_fx.setdefault(sector, {"sector": sector, "effect": 0, "uncertain": True,
                                           "reason": f"{sym} in the news"})
@@ -183,12 +171,8 @@ def analyze(title: str, summary: str = "", kind: str = "market", ml: dict | None
     else:  # no explicit index view: net of sector + stock effects
         net = sum(v["effect"] for v in sector_fx.values()) + sum(s["effect"] for s in stocks)
     sentiment = "bullish" if net > 0 else "bearish" if net < 0 else "mixed"
-    # For company / general news (no macro driver) FinBERT's read of the headline decides the tone.
-    # Macro news keeps the India-specific rule logic (FinBERT would call "crude surges" positive).
     macro = any(e["category"] != "Corporate" for e in events)
-    if fb and not macro:
-        sentiment = {"positive": "bullish", "negative": "bearish"}.get(fb["label"], "mixed")
-    elif not macro and sentiment == "mixed" and tone:  # e.g. unlisted company "shares crash 12%"
+    if not macro and sentiment == "mixed" and tone:  # e.g. unlisted company "shares crash 12%"
         sentiment = "bullish" if tone > 0 else "bearish"
 
     sectors = sorted(sector_fx.values(), key=lambda s: -abs(s["effect"]))
@@ -201,7 +185,6 @@ def analyze(title: str, summary: str = "", kind: str = "market", ml: dict | None
         "stocks": stocks,
         "expected_impact": _explain(events, sectors, stocks),
         "horizon": "intraday-to-days" if any(e["category"] in ("Corporate",) for e in events) else "days-to-weeks",
-        "finbert": ml,
     }
 
 

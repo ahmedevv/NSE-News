@@ -1,5 +1,5 @@
 @echo off
-REM ===== NSE News Impact settings =====
+REM ===== NSE Wire settings =====
 REM setup.bat copies this file to settings.bat. Edit settings.bat, not this one.
 
 REM Who can open the dashboard:
@@ -12,18 +12,23 @@ REM Login for the dashboard. Leave DASH_PASS empty to disable the login (only OK
 set "DASH_USER=admin"
 set "DASH_PASS="
 
-REM Minutes between news + price refreshes (minimum 2)
-set "REFRESH_MINUTES=5"
+REM ---- How often sources are checked (weekdays 07:30-20:00 IST; every 10 minutes outside those hours)
+REM Exchange filings, in seconds (minimum 30)
+set "FILINGS_SECONDS=60"
+REM News headlines and prices, in minutes
+set "NEWS_MINUTES=3"
+set "PRICE_MINUTES=3"
 
-REM ---- Alerts ----
-REM A story with impact score at or above ALERT_MIN_IMPACT (0-10) raises a "high" alert;
-REM at or above ALERT_CRITICAL_IMPACT a "critical" one. Raise them if you get too many alerts.
-set "ALERT_MIN_IMPACT=7"
+REM Weekday of the weekly Nifty expiry: MON TUE WED THU FRI. The last one in the month is the monthly expiry.
+set "EXPIRY_WEEKDAY=TUE"
+
+REM ---- Alerts
+REM Market-wide headlines (RBI, Fed, crude, war ...) with impact at or above ALERT_MACRO_IMPACT (0-10)
+REM raise a "Market-wide" alert; at or above ALERT_CRITICAL_IMPACT a "Critical" one.
+set "ALERT_MACRO_IMPACT=7"
 set "ALERT_CRITICAL_IMPACT=8"
-REM A stock moving this many % in a day (during market hours) raises a price-move alert
-set "MOVE_ALERT_PCT=3"
+REM Warn this many minutes before a high-impact data release or expiry
+set "EVENT_ALERT_MINUTES=15"
+REM India VIX up this many % on the day
+set "VIX_ALERT_PCT=8"
 REM How alerts are shown (pop-up, sound, desktop) is set per browser on the dashboard's Notifications page.
-
-REM FinBERT financial-sentiment model (Hugging Face, runs locally on CPU; ~440 MB download on first run).
-REM 1 = use it (if setup installed it), 0 = rule engine only (saves about 1 GB of RAM).
-set "USE_FINBERT=1"

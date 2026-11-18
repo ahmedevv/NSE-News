@@ -29,6 +29,14 @@ CREATE TABLE IF NOT EXISTS market (
     symbol TEXT PRIMARY KEY, data TEXT, updated TEXT
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS filings (
+    id TEXT PRIMARY KEY, ts TEXT, symbol TEXT, company TEXT, label TEXT, importance TEXT,
+    headline TEXT, detail TEXT, category TEXT, link TEXT, source TEXT, fetched_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_filings_ts ON filings(ts);
+CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY, ts TEXT, title TEXT, impact TEXT, forecast TEXT, previous TEXT, kind TEXT, source TEXT
+);
 """
 
 
@@ -56,12 +64,6 @@ def init():
             c.execute("ALTER TABLE articles ADD COLUMN ml TEXT")
 
 
-def set_ml(rows: list[tuple]):
-    """rows: (ml_json, id)"""
-    with conn() as c:
-        c.executemany("UPDATE articles SET ml=? WHERE id=?", rows)
-
-
 def article_exists(aid: str) -> bool:
     with conn() as c:
         return c.execute("SELECT 1 FROM articles WHERE id=?", (aid,)).fetchone() is not None
@@ -75,7 +77,7 @@ def save_article(a: dict):
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (a["id"], a["title"], a["link"], a["source"], a["kind"], a["published"],
              a.get("summary", ""), a["impact"], json.dumps(a["analysis"]),
-             json.dumps(a["ml"]) if a.get("ml") else None, now_iso()),
+             None, now_iso()),
         )
 
 
@@ -86,7 +88,6 @@ def get_article(aid: str) -> dict | None:
         return None
     d = dict(r)
     d["analysis"] = json.loads(d["analysis"]) if d["analysis"] else {}
-    d["ml"] = json.loads(d["ml"]) if d.get("ml") else None
     return d
 
 
@@ -100,7 +101,6 @@ def recent_articles(since_iso: str, min_impact: float = 0, limit: int = 500) -> 
     for r in rows:
         d = dict(r)
         d["analysis"] = json.loads(d["analysis"]) if d["analysis"] else {}
-        d["ml"] = json.loads(d["ml"]) if d.get("ml") else None
         out.append(d)
     return out
 
@@ -167,7 +167,7 @@ def get_meta(key: str, default: str = "") -> str:
 
 def all_articles_raw() -> list[dict]:
     with conn() as c:
-        return [dict(r) for r in c.execute("SELECT id,title,summary,kind,ml FROM articles").fetchall()]
+        return [dict(r) for r in c.execute("SELECT id,title,summary,kind FROM articles").fetchall()]
 
 
 def update_analysis(rows: list[tuple]):
@@ -230,3 +230,46 @@ def get_watchlist() -> list[str]:
 
 def set_watchlist(symbols: list[str]):
     set_meta("watchlist", json.dumps(sorted({s.strip().upper() for s in symbols if s.strip()})[:100]))
+
+
+# ----------------------------------------------------------------------------- filings
+def known_filing_ids(source: str) -> set[str]:
+    since = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp() - 3 * 86400, timezone.utc).isoformat()
+    with conn() as c:
+        return {r["id"] for r in c.execute("SELECT id FROM filings WHERE source=? AND ts>=?", (source, since))}
+
+
+def save_filings(rows: list[dict]):
+    with conn() as c:
+        c.executemany(
+            """INSERT OR IGNORE INTO filings (id,ts,symbol,company,label,importance,headline,detail,category,link,source,fetched_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            [(r["id"], r["ts"], r["symbol"], r["company"], r["label"], r["importance"], r["headline"], r["detail"],
+              r.get("category", ""), r["link"], r["source"], now_iso()) for r in rows])
+
+
+def recent_filings(since_iso: str, limit: int = 600) -> list[dict]:
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM filings WHERE ts>=? ORDER BY ts DESC LIMIT ?", (since_iso, limit)).fetchall()]
+
+
+def get_filing(fid: str) -> dict | None:
+    with conn() as c:
+        r = c.execute("SELECT * FROM filings WHERE id=?", (fid,)).fetchone()
+    return dict(r) if r else None
+
+
+# ----------------------------------------------------------------------------- scheduled events
+def replace_events(rows: list[dict]):
+    with conn() as c:
+        c.execute("DELETE FROM events")
+        c.executemany(
+            "INSERT OR REPLACE INTO events (id,ts,title,impact,forecast,previous,kind,source) VALUES (?,?,?,?,?,?,?,?)",
+            [(r["id"], r["ts"], r["title"], r["impact"], r["forecast"], r["previous"], r["kind"], r["source"]) for r in rows])
+
+
+def get_events(from_iso: str, to_iso: str) -> list[dict]:
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM events WHERE ts>=? AND ts<=? ORDER BY ts", (from_iso, to_iso)).fetchall()]

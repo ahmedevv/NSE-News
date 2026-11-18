@@ -1,28 +1,27 @@
 "use strict";
 /* NSE Wire front end. No framework, no build step.
-   Timers: clock every 1s, alerts every 15s, wire every 30s, dashboard every 60s. */
+   Timers: clock every 1s, alerts every 15s, feed every 20s, desk (prices, calendar, status) every 30s. */
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const S = {
-  dash: null, wire: [], seen: new Set(), firstWire: true,
+  desk: null, feed: [], seen: new Set(), firstFeed: true,
   alerts: [], lastAlertId: 0,
-  view: "monitor", wireFilter: "all", selected: null,
-  muted: false, watch: [], known: [],
+  view: "desk", filter: "", selected: null,
+  muted: false, watch: [], cache: new Map(),
 };
 try { S.muted = localStorage.getItem("muted") === "1"; } catch {}
 
 /* ------------------------------------------------------------------ formatting */
 const IST_FMT = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
 const IST_FULL = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-const IST_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
+const IST_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short" });
 const istTime = (iso) => IST_FMT.format(new Date(iso));
 function istStamp(iso) {
-  const d = new Date(iso), today = IST_DAY.format(new Date());
-  const day = IST_DAY.format(d);
-  return day === today ? istTime(iso) : `${day} ${istTime(iso)}`;
+  const day = IST_DAY.format(new Date(iso));
+  return day === IST_DAY.format(new Date()) ? istTime(iso) : `${day.replace(/^\w+ /, "")} ${istTime(iso)}`;
 }
 const num = (v, d = 2) => v == null ? "–" : Number(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d });
 const pct = (v) => v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}%`;
@@ -36,20 +35,9 @@ function ago(iso) {
   const h = Math.floor(m / 60);
   return h < 48 ? `${h} h ago` : `${Math.floor(h / 24)} days ago`;
 }
-function sev(score) { return score >= 8 ? "critical" : score >= 7 ? "high" : score >= 5 ? "med" : "low"; }
-const LEVEL_NAME = { critical: "Critical", high: "High", move: "Move", vix: "Volatility", watch: "Watchlist", test: "Test" };
-function arrows(e) {
-  if (e >= 2) return "▲▲"; if (e === 1) return "▲"; if (e <= -2) return "▼▼"; if (e === -1) return "▼"; return "±";
-}
-const fx = (name, e, title = "") =>
-  `<span class="fx ${e > 0 ? "pos" : e < 0 ? "neg" : "unk"}" title="${esc(title)}">${esc(name)} ${arrows(e)}</span>`;
-function spark(vals, w = 72, h = 20) {
-  if (!vals || vals.length < 2) return "";
-  const min = Math.min(...vals), max = Math.max(...vals), r = max - min || 1;
-  const pts = vals.map((v, i) => `${((i / (vals.length - 1)) * w).toFixed(1)},${(h - ((v - min) / r) * (h - 2) - 1).toFixed(1)}`).join(" ");
-  const c = vals[vals.length - 1] >= vals[0] ? "var(--up)" : "var(--down)";
-  return `<svg class="spark" width="${w}" height="${h}" aria-hidden="true"><polyline fill="none" stroke="${c}" stroke-width="1.4" points="${pts}"/></svg>`;
-}
+const dur = (m) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
+const LEVEL_NAME = { critical: "Critical", high: "Market-wide", filing: "Filing", stock: "Stock news", event: "Scheduled",
+  vix: "Volatility", watch: "Watchlist", test: "Test" };
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -57,13 +45,12 @@ async function api(path, opts) {
   return r.json();
 }
 
-/* ------------------------------------------------------------------ session clock */
+/* ------------------------------------------------------------------ session clock + status */
 function istParts(d = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })
     .formatToParts(d).map((x) => [x.type, x.value]));
   return { wd: p.weekday, min: Number(p.hour) * 60 + Number(p.minute) };
 }
-const dur = (m) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
 function tickClock() {
   const now = new Date();
   $("#sessionClock").textContent = `${IST_FULL.format(now)} IST`;
@@ -81,137 +68,173 @@ function tickClock() {
   }
   const st = $("#sessionState"); st.textContent = state; st.className = `session-state ${cls}`;
   $("#sessionNext").textContent = next;
-  tickFeed();
+  tickStatus();
+  tickCountdowns();
 }
 
-function tickFeed() {
-  const d = S.dash; if (!d) return;
-  const el = $("#feed"), age = (Date.now() - new Date(d.last_refresh || 0)) / 60000;
-  const every = d.refresh_minutes || 5;
-  el.className = "feed " + (d.refreshing ? "live" : age < every * 2 + 1 ? "live" : age < 30 ? "late" : "dead");
-  const nextIn = Math.max(0, Math.ceil(every - age));
-  $("#feedText").textContent = d.refreshing ? "Checking sources now"
-    : !d.last_refresh ? "Waiting for first update"
-    : age < every * 2 + 1 ? `Live, updated ${ago(d.last_refresh)}${nextIn ? `, next in ${nextIn} min` : ""}`
-    : `Updates delayed, last ${ago(d.last_refresh)}`;
+function tickStatus() {
+  const d = S.desk; if (!d) return;
+  const el = $("#feed"), last = d.last || {};
+  const age = (iso) => iso ? (Date.now() - new Date(iso)) / 60000 : Infinity;
+  const worst = Math.min(age(last.filings), age(last.news));
+  el.className = "feed " + (d.refreshing || worst < 12 ? "live" : worst < 40 ? "late" : "dead");
+  $("#feedText").textContent = d.refreshing && !last.news ? "Checking sources now"
+    : !last.news && !last.filings ? "Waiting for first update"
+    : `Filings ${ago(last.filings)}, news ${ago(last.news)}`;
 }
 
-/* ------------------------------------------------------------------ top bar + strip */
-const INVERT = new Set(["^INDIAVIX", "USDINR=X", "BZ=F"]); // rising = bad for Indian equities
-function renderQuotes(macro) {
-  $("#quotes").innerHTML = macro.map((m) => {
+/* ------------------------------------------------------------------ top bar */
+const INVERT = new Set(["^INDIAVIX", "USDINR=X", "BZ=F", "^TNX", "DX-Y.NYB"]); // rising = bad for Indian equities
+const decimals = (m) => m.symbol === "USDINR=X" ? 3 : ["^INDIAVIX", "^TNX"].includes(m.symbol) ? 2 : m.price > 1000 ? 1 : 2;
+function renderQuotes(rows) {
+  $("#quotes").innerHTML = rows.map((m) => {
     const ch = m.chg_1d, eff = INVERT.has(m.symbol) ? -ch : ch;
-    const dec = m.symbol === "USDINR=X" ? 3 : m.symbol === "^INDIAVIX" ? 2 : m.price > 1000 ? 1 : 2;
-    const tip = INVERT.has(m.symbol) ? "Coloured by effect on Indian equities: a rise is negative" : "";
-    return `<div class="q" title="${esc(tip)}${m.asof ? ` Last bar ${esc(m.asof)}` : ""}">
+    return `<div class="q" title="${INVERT.has(m.symbol) ? "Coloured by effect on Indian equities: a rise is negative. " : ""}${m.asof ? `Last bar ${esc(m.asof)}` : ""}">
       <span class="q-name">${esc(m.name)}</span>
-      <span class="q-row"><span class="q-px">${m.price != null ? num(m.price, dec) : "–"}</span>
+      <span class="q-row"><span class="q-px">${m.price != null ? num(m.price, decimals(m)) : "–"}</span>
       <span class="q-ch ${ch == null ? "flat" : dirCls(eff)}">${ch == null ? "" : `${ch > 0 ? "▲" : ch < 0 ? "▼" : ""} ${pct(ch)}`}</span></span>
     </div>`;
   }).join("");
 }
-function renderStrip(sectors) {
-  const withIdx = sectors.filter((s) => s.index_market).sort((a, b) => (b.index_market.chg_1d ?? 0) - (a.index_market.chg_1d ?? 0));
-  $("#strip").innerHTML = withIdx.length
-    ? withIdx.map((s) => `<span>${esc(s.sector)}<b class="${dirCls(s.index_market.chg_1d)}">${pct(s.index_market.chg_1d)}</b></span>`).join("")
-    : `<span>Sector index prices are not available yet</span>`;
+function renderGlobal(rows) {
+  $("#globalTbl").innerHTML = rows.map((m) => {
+    const ch = m.chg_1d, eff = INVERT.has(m.symbol) ? -ch : ch;
+    return `<tr><td>${esc(m.name)}</td><td class="r">${m.price != null ? num(m.price, decimals(m)) : "–"}</td>
+      <td class="r ${ch == null ? "flat" : dirCls(eff)}">${pct(ch)}</td></tr>`;
+  }).join("");
 }
 
-/* ------------------------------------------------------------------ news wire */
-function wireRow(n, i) {
-  const a = n.a, lv = sev(a.score);
-  const sectors = (a.sectors || []).filter((s) => s.sector !== "Broad Market" && s.effect).slice(0, 4).map((s) => fx(s.sector, s.effect, s.reason));
-  const stocks = (a.stocks || []).slice(0, 4).map((s) => fx(s.symbol, s.effect, s.reason));
-  const lean = a.sentiment === "bullish" ? "Bullish" : a.sentiment === "bearish" ? "Bearish" : "";
-  const isNew = !S.firstWire && !S.seen.has(n.id);
-  return `<li class="row sev-${lv}${isNew ? " new" : ""}${S.selected === n.id ? " sel" : ""}" data-id="${esc(n.id)}" data-i="${i}" tabindex="0">
-    <time datetime="${esc(n.published)}">${istTime(n.published)}</time>
+/* ------------------------------------------------------------------ today: events, results, ban list */
+function countdown(iso) {
+  const m = Math.round((new Date(iso) - Date.now()) / 60000);
+  if (m < -1) return ["done", "Done"];
+  if (m <= 1) return ["now", "Now"];
+  if (m <= 60) return ["soon", `in ${m} min`];
+  return ["", `in ${dur(m)}`];
+}
+function renderToday(d) {
+  const ev = d.events || [];
+  const rows = ev.map((e) => {
+    const [cls, txt] = countdown(e.ts);
+    const fc = e.forecast || e.previous ? `<span class="sub">${e.forecast ? `Forecast ${esc(e.forecast)}` : ""}${e.forecast && e.previous ? ", " : ""}${e.previous ? `previous ${esc(e.previous)}` : ""}</span>` : "";
+    return `<div class="ev ${e.impact === "high" ? "hi" : ""} ${cls}">
+      <span class="ev-t">${istStamp(e.ts)}</span>
+      <span class="ev-x">${esc(e.title)}${fc}</span>
+      <span class="ev-c" data-ts="${esc(e.ts)}">${txt}</span></div>`;
+  });
+  const res = (d.results || []).map((r) => `<span class="chip" data-sym="${esc(r.symbol)}">${esc(r.symbol)} <i>${esc(r.when)}</i></span>`).join("");
+  const ban = d.ban == null ? `<span class="sub">Not available (NSE blocked or not yet published)</span>`
+    : d.ban.length ? d.ban.map((s) => `<span class="chip ban">${esc(s)}</span>`).join("") : `<span class="sub">No stocks in the ban period</span>`;
+  $("#today").innerHTML = `
+    <div class="t-sec">${rows.length ? rows.join("") : `<div class="empty">No scheduled releases in the next 36 hours.</div>`}</div>
+    <div class="t-row"><span class="t-lbl">Results</span><span class="chips">${res || `<span class="sub">No tracked stock reports today or tomorrow</span>`}</span></div>
+    <div class="t-row"><span class="t-lbl">F&amp;O ban</span><span class="chips">${ban}</span></div>`;
+}
+function tickCountdowns() {
+  $$(".ev-c[data-ts]").forEach((el) => {
+    const [cls, txt] = countdown(el.dataset.ts);
+    if (el.textContent !== txt) { el.textContent = txt; el.parentElement.classList.remove("done", "now", "soon"); if (cls) el.parentElement.classList.add(cls); }
+  });
+}
+
+/* ------------------------------------------------------------------ feed */
+function symTags(it) {
+  return it.symbols.map((s) => {
+    const mv = it.moves?.[s];
+    return `<span class="stk${S.watch.includes(s) ? " w" : ""}">${esc(s)}${mv != null ? ` <span class="${dirCls(mv)}">${pct(mv)}</span>` : ""}</span>`;
+  }).join("");
+}
+function feedRow(it) {
+  const isNew = !S.firstFeed && !S.seen.has(it.id);
+  const kind = it.type === "filing" ? `<span class="badge filing">${esc(it.source)} filing</span>` : `<span class="badge news">News</span>`;
+  return `<li class="row ${it.importance === "high" ? "imp" : ""}${it.market_wide ? " mw" : ""}${isNew ? " new" : ""}${S.selected === it.id ? " sel" : ""}"
+      data-id="${esc(it.id)}" data-type="${it.type}" tabindex="0">
+    <time datetime="${esc(it.ts)}">${istStamp(it.ts)}</time>
     <div>
-      <div class="hl">${esc(n.title)}</div>
-      <div class="meta">
-        <span class="score" title="Impact on Indian equities, 0 to 10">${a.score.toFixed(1)}</span>
-        ${lean ? `<span class="lean ${a.sentiment}">${lean}</span>` : ""}
-        ${[...stocks, ...sectors].join("")}
-        <span>${esc(n.source)}</span>
-      </div>
+      <div class="meta top">${kind}<span class="tag">${esc(it.label)}</span>${symTags(it)}</div>
+      <div class="hl">${esc(it.title)}</div>
+      ${it.snippet ? `<div class="snip">${esc(it.snippet)}${it.snippet.length >= 260 ? "…" : ""}</div>` : ""}
+      <div class="meta">${esc(it.type === "news" ? it.source : it.company || "")}${it.similar ? `<span class="more">+${it.similar} similar ${it.similar === 1 ? "story" : "stories"}</span>` : ""}</div>
     </div>
   </li>`;
 }
-function wireEmpty(text) { return `<li class="empty">${text}</li>`; }
+const feedParams = () => new URLSearchParams({ window: $("#feedWindow").value, kind: S.filter,
+  routine: $("#feedRoutine").checked ? "true" : "false", q: $("#feedSearch").value.trim(), limit: 400 });
 
-async function loadWire() {
-  const f = S.wireFilter;
-  const p = new URLSearchParams({ hours: 24, sort: "time", limit: 200,
-    min_impact: f === "high" ? 7 : 2, kind: f === "india" ? "market" : f === "global" ? "geo" : "",
-    watchlist: f === "watch" ? "true" : "false", q: $("#wireSearch").value.trim() });
-  const rows = await api(`/api/news?${p}`);
-  S.wire = rows;
-  const el = $("#wire");
+async function loadFeed() {
+  const rows = await api(`/api/feed?${feedParams()}`);
+  S.feed = rows;
+  const el = $("#feedList");
   if (!rows.length) {
-    el.innerHTML = wireEmpty(f === "watch" && !S.watch.length
-      ? "Your watchlist is empty. <b>Add symbols in Alerts and watchlist</b> to see their news here."
-      : f === "high" ? "No high-impact stories in the last 24 hours." : "No stories match. Clear the search or pick another filter.");
+    el.innerHTML = `<li class="empty">${S.filter === "watch" && !S.watch.length
+      ? "Your watchlist is empty. <b>Add symbols under Notifications and watchlist.</b>"
+      : $("#feedSearch").value.trim() ? "Nothing matches the search." : "Nothing yet in this window."}</li>`;
   } else {
-    el.innerHTML = rows.map(wireRow).join("");
+    el.innerHTML = rows.map(feedRow).join("");
   }
   rows.forEach((n) => S.seen.add(n.id));
-  if (S.firstWire) { const m = location.hash.match(/^#story=(.+)$/); if (m) openDrawer(findStory(decodeURIComponent(m[1]))); }
-  S.firstWire = false;
+  if (S.firstFeed) {
+    const m = location.hash.match(/^#(filing|news)=(.+)$/);
+    if (m) openItem(m[1], decodeURIComponent(m[2]));
+  }
+  S.firstFeed = false;
+  renderFeedNote();
 }
-
-async function loadNews() {
-  const p = new URLSearchParams({ hours: $("#newsHours").value, sort: $("#newsSort").value, limit: 400,
-    min_impact: $("#newsMin").value, category: $("#newsCat").value, kind: $("#newsKind").value, q: $("#newsSearch").value.trim() });
-  const rows = await api(`/api/news?${p}`);
-  S.newsRows = rows;
-  $("#newsList").innerHTML = rows.length ? rows.map(wireRow).join("") : wireEmpty("No stories match these filters.");
+function renderFeedNote() {
+  const src = Object.fromEntries((S.desk?.sources || []).map((s) => [s.name, s]));
+  const nse = src["NSE filings"], bse = src["BSE filings"];
+  const note = $("#feedNote");
+  if (nse && bse && !nse.ok && !bse.ok) {
+    note.hidden = false;
+    note.innerHTML = `<b>Exchange filings are not reaching this server.</b> Both NSE and BSE refused the connection, so only news headlines are shown. See System for the error.`;
+  } else note.hidden = true;
 }
 
 /* ------------------------------------------------------------------ detail drawer */
-function findStory(id) {
-  if (id === "try") return S.tryRow;
-  if (S.storyCache?.has(id)) return S.storyCache.get(id);
-  return S.wire.find((n) => n.id === id) || (S.newsRows || []).find((n) => n.id === id)
-    || (S.dash?.top_news || []).find((n) => n.id === id) || (S.reportedRows || []).find((n) => n.id === id);
-}
-function openDrawer(n) {
-  if (!n) return;
-  S.selected = n.id;
+async function openItem(type, id) {
+  const key = `${type}:${id}`;
+  let d = S.cache.get(key);
+  if (!d) {
+    try { d = await api(`/api/item?kind=${type}&id=${encodeURIComponent(id)}`); S.cache.set(key, d); } catch { return; }
+  }
+  S.selected = id;
   $$(".row.sel").forEach((r) => r.classList.remove("sel"));
-  $$(`.row[data-id="${CSS.escape(n.id)}"]`).forEach((r) => r.classList.add("sel"));
-  const a = n.a, mk = Object.fromEntries((S.dash?.volatility || []).filter((r) => r.market).map((r) => [r.symbol, r.market]));
-  const lean = a.sentiment === "bullish" ? "Bullish" : a.sentiment === "bearish" ? "Bearish" : "Mixed";
-  const sectors = (a.sectors || []).filter((s) => s.sector !== "Broad Market");
-  const broad = (a.sectors || []).find((s) => s.sector === "Broad Market");
-  const secIdx = Object.fromEntries((S.dash?.sectors || []).map((s) => [s.sector, s.index_market]));
-  $("#drawerBody").innerHTML = `
-    <div class="d-src">${esc(n.source)}, ${istStamp(n.published)} IST</div>
-    <div class="d-title">${esc(n.title)}</div>
-    ${n.link && n.link !== "#" ? `<a href="${esc(n.link)}" target="_blank" rel="noopener">Open the original story</a>` : ""}
-    <div class="d-stats">
-      <div><span>Impact</span><b style="${a.score >= 8 ? "color:var(--amber)" : ""}">${a.score.toFixed(1)} / 10</b></div>
-      <div><span>Lean for India</span><b class="${a.sentiment === "bullish" ? "up" : a.sentiment === "bearish" ? "down" : ""}">${lean}</b></div>
-      <div><span>Horizon</span><b>${esc((a.horizon || "").replace("-to-", " to "))}</b></div>
-      <div><span>Category</span><b>${esc(a.category)}</b></div>
-    </div>
-    <h3>What to expect</h3>
-    <p>${esc(a.expected_impact)}</p>
-    ${broad && broad.effect ? `<p>Overall market: <span class="${broad.effect > 0 ? "up" : "down"}">${broad.effect > 0 ? "supportive" : "negative"}</span>.</p>` : ""}
-    ${(a.events || []).length ? `<h3>Why</h3>${a.events.map((e) => `<div class="driver"><b>${esc(e.name)}</b>${e.direction && !["n/a", "unclear"].includes(e.direction) ? `, ${esc(e.direction)}` : ""}<p>${esc(e.why)}</p></div>`).join("")}` : ""}
-    ${sectors.length ? `<h3>Sectors</h3><table class="tbl"><tr><th>Sector</th><th>Effect</th><th class="r">Index today</th></tr>
-      ${sectors.map((s) => `<tr><td>${esc(s.sector)}<span class="sub">${esc(s.reason || "")}</span></td>
-        <td>${fx(s.effect > 0 ? "Positive" : s.effect < 0 ? "Negative" : "Exposed", s.effect)}</td>
-        <td class="r ${dirCls(secIdx[s.sector]?.chg_1d)}">${secIdx[s.sector] ? pct(secIdx[s.sector].chg_1d) : "–"}</td></tr>`).join("")}</table>` : ""}
-    ${(a.stocks || []).length ? `<h3>Stocks named</h3><table class="tbl"><tr><th>Symbol</th><th>Effect</th><th class="r">Price</th><th class="r">Today</th><th></th></tr>
-      ${a.stocks.map((s) => { const m = mk[s.symbol]; return `<tr><td class="sym">${esc(s.symbol)}<span class="sub">${esc(s.sector || "")}</span></td>
-        <td>${fx(s.effect > 0 ? "Positive" : s.effect < 0 ? "Negative" : "Watch", s.effect, s.reason)}<span class="sub">${esc(s.reason || "")}</span></td>
-        <td class="r">${m ? num(m.price) : "–"}</td><td class="r ${dirCls(m?.chg_1d)}">${m ? pct(m.chg_1d) : "–"}</td>
-        <td class="r">${S.watch.includes(s.symbol) ? `<span class="sub">On watchlist</span>` : `<button class="add-watch" data-add="${esc(s.symbol)}">Watch</button>`}</td></tr>`; }).join("")}</table>` : ""}
-    ${a.finbert ? `<h3>FinBERT reading</h3><p>The headline reads ${esc(a.finbert.label)} with ${(a.finbert.score * 100).toFixed(0)}% confidence. Used for company tone only.</p>` : ""}
-  `;
-  history.replaceState(null, "", `#story=${encodeURIComponent(n.id)}`);
+  $$(`.row[data-id="${CSS.escape(id)}"]`).forEach((r) => r.classList.add("sel"));
+  $("#drawerBody").innerHTML = type === "filing" ? filingDetail(d) : newsDetail(d);
+  history.replaceState(null, "", `#${type}=${encodeURIComponent(id)}`);
   $("#drawer").hidden = false;
   $("#drawerClose").focus({ preventScroll: true });
+}
+function stockTable(list) {
+  if (!list?.length) return "";
+  return `<table class="tbl"><tr><th>Stock</th><th class="r">Price</th><th class="r">Today</th><th></th></tr>
+    ${list.map((s) => `<tr><td class="sym">${esc(s.symbol)}</td><td class="r">${num(s.price)}</td>
+      <td class="r ${dirCls(s.chg)}">${pct(s.chg)}</td>
+      <td class="r">${S.watch.includes(s.symbol) ? `<span class="sub">On watchlist</span>` : `<button class="add-watch" data-add="${esc(s.symbol)}">Watch</button>`}</td></tr>`).join("")}</table>`;
+}
+function filingDetail(d) {
+  return `
+    <div class="d-src">${esc(d.source)} filing, ${istStamp(d.ts)} IST</div>
+    <div class="d-title">${esc(d.symbol || d.symbols[0])}: ${esc(d.title)}</div>
+    <div class="meta top"><span class="tag">${esc(d.label)}</span><span>${esc(d.company)}</span>${d.sector ? `<span>${esc(d.sector)}</span>` : ""}</div>
+    ${d.link ? `<p><a href="${esc(d.link)}" target="_blank" rel="noopener">Open the filing (PDF)</a></p>` : ""}
+    ${d.detail ? `<h3>What the company filed</h3><p class="pre">${esc(d.detail)}</p>` : ""}
+    ${d.category && d.category !== d.title ? `<p class="sub">Exchange category: ${esc(d.category)}</p>` : ""}
+    <h3>Price</h3>${stockTable(d.stocks)}`;
+}
+function newsDetail(d) {
+  const exp = (d.exposure || []).map((x) => `<tr><td>${esc(x.sector)}</td>
+      <td class="${x.effect > 0 ? "up" : "down"}">${x.effect > 0 ? "Gains" : "Hurt"}${Math.abs(x.effect) >= 2 ? ", strongly" : ""}</td>
+      <td>${x.stocks.map((s) => `<span class="stk">${esc(s.symbol)} <span class="${dirCls(s.chg)}">${s.chg == null ? "" : pct(s.chg)}</span></span>`).join(" ")}</td></tr>`).join("");
+  return `
+    <div class="d-src">${esc(d.source)}, ${istStamp(d.ts)} IST</div>
+    <div class="d-title">${esc(d.title)}</div>
+    ${d.label ? `<div class="meta top"><span class="tag">${esc(d.label)}</span></div>` : ""}
+    ${d.link ? `<p><a href="${esc(d.link)}" target="_blank" rel="noopener">Open the original story</a></p>` : ""}
+    ${d.summary ? `<p>${esc(d.summary)}</p>` : ""}
+    ${d.drivers?.length ? `<h3>Why it matters</h3>${d.drivers.map((e) => `<div class="driver"><b>${esc(e.name)}</b>${["up", "down"].includes(e.direction) ? `, ${e.direction === "up" ? "rising" : "falling"}` : ""}<p>${esc(e.why)}</p></div>`).join("")}` : ""}
+    ${exp ? `<h3>Who is exposed</h3><table class="tbl"><tr><th>Sector</th><th>Usual effect</th><th>Stocks today</th></tr>${exp}</table>` : ""}
+    ${d.stocks?.length ? `<h3>Stocks named</h3>${stockTable(d.stocks)}` : ""}`;
 }
 function closeDrawer() {
   $("#drawer").hidden = true; S.selected = null;
@@ -219,77 +242,7 @@ function closeDrawer() {
   $$(".row.sel").forEach((r) => r.classList.remove("sel"));
 }
 
-/* ------------------------------------------------------------------ side panes */
-function renderVolMini(rows) {
-  const el = $("#volMini");
-  if (!rows.length) { el.innerHTML = `<tr><td class="empty">Nothing yet. The list fills as news arrives.</td></tr>`; return; }
-  el.innerHTML = `<tr><th>Stock</th><th>News pressure</th><th>Lean</th><th class="r">Price</th><th class="r">Today</th></tr>` +
-    rows.slice(0, 12).map((r) => `<tr>
-      <td class="sym">${esc(r.symbol)}<span class="sub">${esc(r.sector)}</span></td>
-      <td><span class="meter"><i style="width:${r.score}%"></i></span>${r.score}</td>
-      <td class="${r.bias === "bullish" ? "up" : r.bias === "bearish" ? "down" : "flat"}">${r.bias === "two-way" ? "Two-way" : r.bias === "bullish" ? "Bullish" : "Bearish"}${r.earnings ? `<span class="sub">Results ${esc(r.earnings.slice(5))}</span>` : ""}</td>
-      <td class="r">${r.market ? num(r.market.price) : "–"}</td>
-      <td class="r ${dirCls(r.market?.chg_1d)}">${r.market ? pct(r.market.chg_1d) : "–"}</td></tr>`).join("");
-}
-function renderVolTable(rows) {
-  const el = $("#volTable");
-  if (!rows.length) { el.innerHTML = `<tr><td class="empty">Nothing yet. The list fills as news arrives.</td></tr>`; return; }
-  el.innerHTML = `<tr><th>Stock</th><th>News pressure</th><th>Lean</th><th class="r">Price</th><th class="r">Today</th><th class="r">5 days</th>
-    <th class="r" title="20-day annualised realised volatility. The second figure compares it with the 60-day level; above 1.2 means volatility is expanding.">Realised vol</th><th>30 days</th><th>Results</th><th>Main story</th></tr>` +
-    rows.map((r) => { const m = r.market, h = r.headlines[0]; return `<tr>
-      <td class="sym">${esc(r.symbol)}<span class="sub">${esc(r.sector)}</span></td>
-      <td><span class="meter"><i style="width:${r.score}%"></i></span>${r.score}<span class="sub">${r.direct_mentions ? `${r.direct_mentions} direct stories` : "Through its sector"}</span></td>
-      <td class="${r.bias === "bullish" ? "up" : r.bias === "bearish" ? "down" : "flat"}">${r.bias === "two-way" ? "Two-way" : r.bias === "bullish" ? "Bullish" : "Bearish"}</td>
-      <td class="r">${m ? num(m.price) : "–"}</td>
-      <td class="r ${dirCls(m?.chg_1d)}">${m ? pct(m.chg_1d) : "–"}</td>
-      <td class="r ${dirCls(m?.chg_5d)}">${m ? pct(m.chg_5d) : "–"}</td>
-      <td class="r">${m ? `${m.rv20}%` : "–"}${m?.vol_regime ? `<span class="sub ${m.vol_regime > 1.2 ? "down" : ""}">${m.vol_regime}x</span>` : ""}</td>
-      <td>${m ? spark(m.spark) : ""}</td>
-      <td>${r.earnings ? esc(r.earnings) : ""}</td>
-      <td class="hl-cell">${h ? `<a href="${esc(h.link)}" target="_blank" rel="noopener">${esc(h.title)}</a>` : ""}</td></tr>`; }).join("");
-}
-function divBar(net, max) {
-  const w = Math.min(50, (Math.abs(net) / (max || 1)) * 50);
-  return `<span class="div"><i class="${net >= 0 ? "pos" : "neg"}" style="width:${w}%"></i></span>`;
-}
-function renderSecMini(rows) {
-  const active = rows.filter((s) => s.count && s.sector !== "Broad Market").sort((a, b) => Math.abs(b.net) - Math.abs(a.net)).slice(0, 12);
-  const max = Math.max(1, ...active.map((s) => Math.abs(s.net)));
-  $("#secMini").innerHTML = active.length ? active.map((s) => `<li class="sec" title="${esc(s.top_reasons.join("\n"))}">
-      <span>${esc(s.sector)}</span>${divBar(s.net, max)}
-      <span class="r ${dirCls(s.index_market?.chg_1d)}">${s.index_market ? pct(s.index_market.chg_1d) : ""}</span></li>`).join("")
-    : `<li class="empty">No sector-moving news yet.</li>`;
-}
-function renderSecTable(rows) {
-  const max = Math.max(1, ...rows.map((s) => Math.abs(s.net)));
-  $("#secTable").innerHTML = `<tr><th>Sector</th><th>Net news pressure</th><th class="r">Score</th><th class="r">Stories</th><th class="r">Index today</th><th>Main drivers</th></tr>` +
-    rows.map((s) => `<tr><td class="sym">${esc(s.sector)}</td><td style="min-width:160px">${divBar(s.net, max)}</td>
-      <td class="r ${dirCls(s.net)}">${s.net > 0 ? "+" : ""}${s.net}</td><td class="r">${s.count}</td>
-      <td class="r ${dirCls(s.index_market?.chg_1d)}">${s.index ? (s.index_market ? pct(s.index_market.chg_1d) : "–") : ""}</td>
-      <td class="hl-cell">${s.top_reasons.map(esc).join("<br>") || "Quiet"}</td></tr>`).join("");
-}
-function dayLabel(r) { return r.days_away === 0 ? "Today" : r.days_away === 1 ? "Tomorrow" : new Date(r.date + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); }
-function renderEarnings(rows) {
-  const week = rows.filter((r) => r.tracked && r.days_away <= 7).slice(0, 12);
-  $("#earnMini").innerHTML = week.length ? week.map((r) => `<div class="e-row"><span class="d ${r.days_away <= 1 ? "soon" : ""}">${dayLabel(r)}</span>
-      <span><b class="sym">${esc(r.symbol)}</b> <span class="sub" style="display:inline">${esc(r.sector)}</span></span>
-      <span class="${dirCls(r.market?.chg_1d)}">${r.market ? pct(r.market.chg_1d) : ""}</span></div>`).join("")
-    : `<div class="empty">No large-cap results in the next 7 days, or the exchange calendars are blocked. Check System.</div>`;
-  const tracked = $("#trackedOnly").checked, list = tracked ? rows.filter((r) => r.tracked) : rows;
-  $("#earnTable").innerHTML = list.length ? `<tr><th>Date</th><th>Symbol</th><th>Company</th><th>Sector</th><th class="r">Today</th><th class="r">Realised vol</th></tr>` +
-    list.map((r) => `<tr><td>${dayLabel(r)}<span class="sub">${esc(r.date)}</span></td><td class="sym">${esc(r.symbol)}</td>
-      <td>${esc(r.company)}</td><td>${esc(r.sector)}</td><td class="r ${dirCls(r.market?.chg_1d)}">${r.market ? pct(r.market.chg_1d) : "–"}</td>
-      <td class="r">${r.market ? r.market.rv20 + "%" : "–"}</td></tr>`).join("")
-    : `<tr><td class="empty">No results scheduled${tracked ? " for large caps" : ""}. If the NSE and BSE sources show as failing in System, add dates to data\\earnings_manual.csv.</td></tr>`;
-}
-function renderReported(rows) {
-  S.reportedRows = rows.map((r) => ({ id: "rep-" + r.symbol, title: r.title, link: r.link, source: "", published: r.published,
-    a: { score: 5, sentiment: r.effect > 0 ? "bullish" : r.effect < 0 ? "bearish" : "mixed", stocks: [{ symbol: r.symbol, effect: r.effect, sector: r.sector }], sectors: [], events: [], category: "Corporate", expected_impact: "Company results in the news." } }));
-  $("#reported").innerHTML = rows.length ? rows.map((r) => `<li class="row sev-med" style="cursor:default">
-    <time>${istTime(r.published)}</time><div><div class="hl"><a href="${esc(r.link)}" target="_blank" rel="noopener">${esc(r.title)}</a></div>
-    <div class="meta">${fx(r.symbol, r.effect)}<span>${esc(r.sector)}</span></div></div></li>`).join("")
-    : wireEmpty("No results coverage in the last 48 hours.");
-}
+/* ------------------------------------------------------------------ sources */
 function renderSources(rows) {
   $("#srcTable").innerHTML = `<tr><th>Source</th><th>Status</th><th class="r">Items</th><th>Checked</th><th>Problem</th></tr>` +
     rows.map((s) => `<tr><td>${esc(s.name)}</td><td class="${s.ok ? "up" : "down"}">${s.ok ? "Working" : "Failing"}</td>
@@ -300,9 +253,13 @@ function renderSources(rows) {
    Alerts are created on the server. The browser decides how to show each one, per level:
    pop-up (with the amber banner for critical/volatility), sound, and desktop notification.
    Read state and preferences live in this browser's localStorage. */
-const LEVELS = ["critical", "high", "move", "vix", "watch"];
-const DEFAULT_PREFS = { critical: { popup: true, sound: true, desktop: true }, high: { popup: true, sound: true, desktop: true },
-  move: { popup: true, sound: true, desktop: false }, vix: { popup: true, sound: true, desktop: true }, watch: { popup: true, sound: false, desktop: false } };
+const LEVELS = ["critical", "high", "filing", "stock", "event", "vix", "watch"];
+const DEFAULT_PREFS = {
+  critical: { popup: true, sound: true, desktop: true }, high: { popup: true, sound: true, desktop: true },
+  filing: { popup: true, sound: true, desktop: true }, stock: { popup: true, sound: false, desktop: false },
+  event: { popup: true, sound: true, desktop: true }, vix: { popup: true, sound: true, desktop: true },
+  watch: { popup: true, sound: true, desktop: true },
+};
 const store = {
   get(k, d) { try { const v = localStorage.getItem("nw." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem("nw." + k, JSON.stringify(v)); } catch {} },
@@ -311,7 +268,6 @@ S.prefs = JSON.parse(JSON.stringify(DEFAULT_PREFS));
 Object.entries(store.get("prefs", {})).forEach(([l, v]) => { if (S.prefs[l]) Object.assign(S.prefs[l], v); });
 S.readBase = store.get("readBase", null);      // every alert id <= this is read
 S.readIds = new Set(store.get("readIds", []));  // individually read alerts above readBase
-S.storyCache = new Map();
 const pref = (level, kind) => (S.prefs[level] || S.prefs.high)[kind];
 const isUnread = (al) => S.readBase != null && al.id > S.readBase && !S.readIds.has(al.id);
 function saveRead() { store.set("readBase", S.readBase); store.set("readIds", [...S.readIds].slice(-500)); }
@@ -330,7 +286,7 @@ function alertItem(al, fresh = false) {
 }
 function renderAlerts(freshIds = new Set()) {
   const items = S.alerts;
-  const none = `<li class="empty">No notifications yet. They appear for high-impact stories, big price moves, India VIX spikes and watchlist news.</li>`;
+  const none = `<li class="empty">No notifications yet. They appear for market-wide shocks, important filings, scheduled releases, VIX spikes and watchlist news.</li>`;
   $("#alertsMini").innerHTML = items.length ? items.slice(0, 15).map((a) => alertItem(a, freshIds.has(a.id))).join("") : none;
   $("#alertLog").innerHTML = items.length ? items.map((a) => alertItem(a, freshIds.has(a.id))).join("") : none;
   $("#notifList").innerHTML = items.length ? items.slice(0, 40).map((a) => alertItem(a, freshIds.has(a.id))).join("") : none;
@@ -345,15 +301,9 @@ async function openAlert(al) {
   if (!al) return;
   markRead(al);
   closePanel();
-  if (al.article_id) {
-    let n = findStory(al.article_id);
-    if (!n) {
-      try { n = await api(`/api/story/${encodeURIComponent(al.article_id)}`); S.storyCache.set(n.id, n); } catch {}
-    }
-    if (n) { openDrawer(n); return; }
-  }
-  if (al.kind === "price") { showView("vol"); return; }
-  showView("alerts");
+  if (al.article_id && (al.kind === "filing" || al.kind === "news")) { showView("desk"); openItem(al.kind, al.article_id); return; }
+  if (al.link) { window.open(al.link, "_blank", "noopener"); return; }
+  showView(al.kind === "calendar" || al.kind === "price" ? "desk" : "alerts");
 }
 const alertById = (id) => S.alerts.find((a) => a.id === Number(id));
 
@@ -366,8 +316,9 @@ async function pollAlerts(initial = false) {
   if (initial) { renderAlerts(); return; }
   renderAlerts(new Set(rows.map((r) => r.id)));
   deliver(rows);
-  loadWire().catch(() => {});
+  loadFeed().catch(() => {});
 }
+const rank = (l) => ({ critical: 5, vix: 4, filing: 3, event: 3, high: 3, watch: 2, stock: 1 }[l] || 0);
 function deliver(rows) {
   const byRank = rows.slice().sort((a, b) => rank(b.level) - rank(a.level));
   const bannerAl = byRank.find((a) => (a.level === "critical" || a.level === "vix") && pref(a.level, "popup"));
@@ -377,7 +328,6 @@ function deliver(rows) {
   if (loud) beep(loud.level);
   byRank.filter((a) => pref(a.level, "desktop")).slice(0, 3).forEach(notify);
 }
-const rank = (l) => ({ critical: 4, vix: 3, high: 2, move: 2, watch: 1 }[l] || 0);
 function showBanner(al) {
   S.bannerAlert = al;
   $("#bannerLevel").textContent = LEVEL_NAME[al.level] || al.level;
@@ -402,7 +352,8 @@ function beep(level) {
   if (S.muted) return;
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const tones = level === "critical" || level === "vix" ? [880, 660, 880] : level === "watch" ? [520] : [740, 990];
+    const tones = level === "critical" || level === "vix" ? [880, 660, 880] : level === "watch" || level === "stock" ? [520]
+      : level === "event" ? [660, 660] : [740, 990];
     tones.forEach((f, i) => {
       const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t0 = audioCtx.currentTime + i * 0.16;
       o.frequency.value = f; o.type = "sine";
@@ -449,42 +400,38 @@ function renderPrefs() {
 
 /* ------------------------------------------------------------------ watchlist */
 function renderWatch() {
-  const mk = Object.fromEntries((S.dash?.volatility || []).filter((r) => r.market).map((r) => [r.symbol, r.market]));
-  $("#watchList").innerHTML = S.watch.length ? S.watch.map((s) => { const m = mk[s]; return `<li>${esc(s)}
-      ${m ? `<span class="px ${dirCls(m.chg_1d)}">${pct(m.chg_1d)}</span>` : ""}
-      <button data-remove="${esc(s)}" aria-label="Remove ${esc(s)}">×</button></li>`; }).join("")
+  $("#watchList").innerHTML = S.watch.length
+    ? S.watch.map((s) => `<li>${esc(s)}<button data-remove="${esc(s)}" aria-label="Remove ${esc(s)}">×</button></li>`).join("")
     : `<li class="empty" style="background:none;border:0;padding:4px 0;font-weight:400">No stocks yet.</li>`;
 }
 async function saveWatch(list) {
   const r = await api("/api/watchlist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ symbols: list }) });
   S.watch = r.symbols; renderWatch();
-  if (S.selected) openDrawer(findStory(S.selected));
+  S.cache.clear();
+  if (S.selected) { const row = $(`.row[data-id="${CSS.escape(S.selected)}"]`); if (row) openItem(row.dataset.type, S.selected); }
+  loadFeed().catch(() => {});
 }
 
-/* ------------------------------------------------------------------ dashboard */
-async function loadDashboard() {
-  const d = await api("/api/dashboard?hours=24");
-  S.dash = d; S.watch = d.watchlist || [];
-  renderQuotes(d.macro || []);
-  renderStrip(d.sectors);
-  renderVolMini(d.volatility);
-  renderVolTable(d.volatility);
-  renderSecMini(d.sectors);
-  renderSecTable(d.sectors);
-  renderEarnings(d.earnings);
-  renderReported(d.reported);
-  renderSources(d.sources);
+/* ------------------------------------------------------------------ desk */
+async function loadDesk() {
+  const d = await api("/api/desk");
+  S.desk = d; S.watch = d.watchlist || [];
+  renderQuotes(d.quotes || []);
+  renderGlobal(d.global || []);
+  renderToday(d);
+  renderSources(d.sources || []);
   renderWatch();
   renderPrefs();
-  tickFeed();
+  renderFeedNote();
+  tickStatus();
 }
 
 /* ------------------------------------------------------------------ views + wiring */
 function showView(v) {
+  if (!$(`#v-${v}`)) v = "desk";
   S.view = v;
   $$("#views button[data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === v));
   $$(".view").forEach((s) => s.classList.toggle("on", s.id === `v-${v}`));
-  if (v === "news") loadNews().catch(() => {});
   try { localStorage.setItem("view", v); } catch {}
 }
 $("#views").addEventListener("click", (e) => { const b = e.target.closest("button[data-view]"); if (b) showView(b.dataset.view); });
@@ -492,24 +439,25 @@ document.addEventListener("click", (e) => {
   const go = e.target.closest("[data-goto]"); if (go) { showView(go.dataset.goto); return; }
   const add = e.target.closest("[data-add]"); if (add) { saveWatch([...S.watch, add.dataset.add]); return; }
   const rm = e.target.closest("[data-remove]"); if (rm) { saveWatch(S.watch.filter((s) => s !== rm.dataset.remove)); return; }
+  const chip = e.target.closest(".chip[data-sym]");
+  if (chip) { $("#feedSearch").value = chip.dataset.sym; showView("desk"); loadFeed().catch(() => {}); return; }
   const row = e.target.closest(".row[data-id]");
-  if (row && !e.target.closest("a")) openDrawer(findStory(row.dataset.id));
+  if (row && !e.target.closest("a")) openItem(row.dataset.type, row.dataset.id);
 });
 document.addEventListener("keydown", (e) => {
   const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName);
   if (e.key === "Escape") { if (panelOpen()) closePanel(); else if (!$("#drawer").hidden) closeDrawer(); else $("#banner").hidden = true; return; }
   if (e.key === "Enter" && document.activeElement?.matches("[data-alert]")) { openAlert(alertById(document.activeElement.dataset.alert)); return; }
   if (typing) return;
-  if (e.key === "/") { e.preventDefault(); showView("monitor"); $("#wireSearch").focus(); return; }
-  const views = ["monitor", "news", "vol", "sectors", "earnings", "alerts", "system"];
-  if (/^[1-7]$/.test(e.key)) { showView(views[Number(e.key) - 1]); return; }
-  if (e.key === "Enter" && document.activeElement?.matches(".row[data-id]")) { openDrawer(findStory(document.activeElement.dataset.id)); return; }
+  if (e.key === "/") { e.preventDefault(); showView("desk"); $("#feedSearch").focus(); return; }
+  const views = ["desk", "alerts", "system"];
+  if (/^[1-3]$/.test(e.key)) { showView(views[Number(e.key) - 1]); return; }
+  if (e.key === "Enter" && document.activeElement?.matches(".row[data-id]")) { const r = document.activeElement; openItem(r.dataset.type, r.dataset.id); return; }
   if (e.key === "j" || e.key === "k") {
-    const list = S.view === "news" ? "#newsList" : "#wire";
-    const rows = $$(`${list} .row[data-id]`); if (!rows.length) return;
+    const rows = $$("#feedList .row[data-id]"); if (!rows.length) return;
     let i = rows.findIndex((r) => r.dataset.id === S.selected);
     i = e.key === "j" ? Math.min(rows.length - 1, i + 1) : Math.max(0, i - 1);
-    rows[i].focus(); rows[i].scrollIntoView({ block: "nearest" }); openDrawer(findStory(rows[i].dataset.id)); rows[i].focus();
+    rows[i].scrollIntoView({ block: "nearest" }); openItem(rows[i].dataset.type, rows[i].dataset.id); rows[i].focus();
   }
 });
 $("#drawerClose").onclick = closeDrawer;
@@ -530,22 +478,20 @@ const soundBtn = $("#soundBtn");
 function paintSound() { soundBtn.setAttribute("aria-pressed", String(!S.muted)); soundBtn.textContent = S.muted ? "Sound off" : "Sound on"; }
 soundBtn.onclick = () => { S.muted = !S.muted; try { localStorage.setItem("muted", S.muted ? "1" : "0"); } catch {} paintSound(); if (!S.muted) beep("high"); renderPrefs(); };
 paintSound();
-$("#wireFilter").addEventListener("click", (e) => {
+$("#feedFilter").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-f]"); if (!b) return;
-  S.wireFilter = b.dataset.f; $$("#wireFilter button").forEach((x) => x.classList.toggle("on", x === b));
-  loadWire().catch(() => {});
+  S.filter = b.dataset.f; $$("#feedFilter button").forEach((x) => x.classList.toggle("on", x === b));
+  try { localStorage.setItem("filter", S.filter); } catch {}
+  loadFeed().catch(() => {});
 });
 let tmr;
 const debounce = (fn) => () => { clearTimeout(tmr); tmr = setTimeout(() => fn().catch(() => {}), 250); };
-$("#wireSearch").addEventListener("input", debounce(loadWire));
-["#newsSearch", "#newsCat", "#newsKind", "#newsHours", "#newsSort"].forEach((s) => $(s).addEventListener("input", debounce(loadNews)));
-$("#newsMin").addEventListener("input", () => { $("#newsMinV").textContent = $("#newsMin").value; debounce(loadNews)(); });
-$("#trackedOnly").addEventListener("change", () => S.dash && renderEarnings(S.dash.earnings));
+$("#feedSearch").addEventListener("input", debounce(loadFeed));
+["#feedWindow", "#feedRoutine"].forEach((s) => $(s).addEventListener("change", () => loadFeed().catch(() => {})));
 $("#refreshBtn").onclick = async () => {
   const b = $("#refreshBtn"); b.disabled = true; b.textContent = "Checking";
   await api("/api/refresh", { method: "POST" }).catch(() => {});
-  if (S.dash) S.dash.refreshing = true; tickFeed();
-  setTimeout(async () => { await refreshAll(); b.disabled = false; b.textContent = "Check now"; }, 6000);
+  setTimeout(async () => { await refreshAll(); b.disabled = false; b.textContent = "Check now"; }, 8000);
 };
 $("#testAlert").onclick = async () => {
   const b = $("#testAlert"); b.disabled = true;
@@ -566,24 +512,30 @@ $("#watchForm").addEventListener("submit", (e) => {
 $("#tryForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const t = $("#tryText").value.trim(); if (!t) return;
-  const a = await api(`/api/analyze?text=${encodeURIComponent(t)}`);
-  const n = { id: "try", title: t, link: "#", source: "Your headline", published: new Date().toISOString(), a };
-  S.tryRow = n;
-  $("#tryOut").innerHTML = `<ol class="wire">${wireRow(n, 0)}</ol>`;
+  const r = await api(`/api/analyze?text=${encodeURIComponent(t)}`);
+  const why = r.wrap ? "Hidden: it reads as a market wrap, preview or list, which carries no new information."
+    : r.shown ? "Shown on the desk." : "Hidden: it names no tracked stock and no market-wide trigger.";
+  $("#tryOut").innerHTML = `<p class="note"><b>${esc(why)}</b></p>
+    ${r.item ? `<ol class="wire">${feedRow({ ...r.item, moves: {} })}</ol>` : ""}
+    ${r.drivers.length ? `<dl class="kv">${r.drivers.map((d) => `<dt>${esc(d.name)}</dt><dd>${["up", "down"].includes(d.direction) ? (d.direction === "up" ? "Rising. " : "Falling. ") : ""}${esc(d.why)}</dd>`).join("")}</dl>` : ""}
+    ${r.stocks.length ? `<p class="note">Stocks recognised: ${r.stocks.map(esc).join(", ")}</p>` : ""}`;
 });
 
 async function refreshAll() {
-  await Promise.allSettled([loadDashboard(), loadWire(), pollAlerts()]);
-  if (S.view === "news") loadNews().catch(() => {});
+  await Promise.allSettled([loadDesk(), loadFeed(), pollAlerts()]);
 }
 
 /* ------------------------------------------------------------------ boot */
 (async function boot() {
+  try {
+    const v = localStorage.getItem("view"); if (v) showView(v);
+    const f = localStorage.getItem("filter");
+    if (f != null) { S.filter = f; $$("#feedFilter button").forEach((x) => x.classList.toggle("on", x.dataset.f === f)); }
+  } catch {}
   tickClock(); setInterval(tickClock, 1000);
-  try { const v = localStorage.getItem("view"); if (v && $(`#v-${v}`)) showView(v); } catch {}
-  await Promise.allSettled([loadDashboard(), loadWire(), pollAlerts(true)]);
-  api("/api/watchlist").then((w) => { S.known = w.known; $("#knownSymbols").innerHTML = w.known.map((s) => `<option value="${esc(s)}">`).join(""); }).catch(() => {});
+  await Promise.allSettled([loadDesk(), loadFeed(), pollAlerts(true)]);
+  api("/api/watchlist").then((w) => { $("#knownSymbols").innerHTML = w.known.map((s) => `<option value="${esc(s)}">`).join(""); }).catch(() => {});
   setInterval(() => pollAlerts().catch(() => {}), 15000);
-  setInterval(() => loadWire().catch(() => {}), 30000);
-  setInterval(() => loadDashboard().catch(() => {}), 60000);
+  setInterval(() => loadFeed().catch(() => {}), 20000);
+  setInterval(() => loadDesk().catch(() => {}), 30000);
 })();

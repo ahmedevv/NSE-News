@@ -1,83 +1,93 @@
 # NSE Wire
 
-A live news terminal for Indian equities. It watches Indian market news and world/geopolitical news, works out how each story is likely to move NSE sectors and stocks, and alerts you when something important happens.
+An intraday desk for Indian equity and index options traders. It shows, in one live feed, what can move a stock or the index **today**:
 
-**The Monitor screen (key 1)** has:
-- **Top bar**: Nifty 50, Bank Nifty, India VIX, USD/INR, Brent, Gold and the S&P 500, plus the NSE session clock in IST and a live indicator showing when the sources were last checked. Colours show the effect on Indian equities, so a rising VIX, dollar or Brent shows in red.
-- **News wire**: every story as it arrives, newest first, with its time in IST, impact score (0 to 10), lean for Indian equities, and the sectors and stocks it touches (▲ positive, ▼ negative, two arrows means strong). A bar on the left edge marks high-impact (dark amber) and critical (bright amber) stories. Click any story for the full read: what to expect, why, the sector effects, and stocks with prices.
-- **Latest alerts**, **Volatility watch** (stocks under the most news pressure), **Sector pressure** (net good or bad news per sector) and **Results this week**.
+- **Exchange filings** (NSE and BSE corporate announcements) for about 120 of the most traded stocks across sectors. Companies file here first, often before any news site. Each filing gets a plain label (Results, Order / contract, M&A, Capital raise / buyback, Management change, Regulatory / legal, Business update ...). Routine paperwork (trading window, newspaper ads, investor meets) is hidden unless you tick *Routine filings*.
+- **Headlines**, but only two kinds: news naming a tracked stock, and market-wide triggers (RBI, Fed, crude, war or escalation in the Gulf, rupee, FII flows, tariffs involving India, SEBI rules). Market wraps ("Sensex ends 300 pts lower"), listicles ("Stocks to watch"), tips, features and opinion pieces are dropped. When many outlets carry the same driver, it shows once with "+N similar stories".
+- **Today**: scheduled releases with IST times and a countdown (US CPI, jobs, Fed, ECB, China data ...), the weekly / monthly expiry, results due today or tomorrow, and the F&O ban list.
+- **Global cues** for the pre-market read: S&P 500 and Nasdaq futures, Nikkei, Hang Seng, US 10-year yield, dollar index, gold.
 
-Other screens: News (2, every story with filters), Volatility (3), Sectors (4), Earnings (5), Alerts and watchlist (6), System (7, source health and a headline tester).
+The default window is **Since last close** (15:30 IST of the previous session), so at 08:45 the desk is your overnight brief.
 
-**Keyboard:** `1` to `7` switch screens, `/` searches the wire, `j` / `k` step through stories, `Esc` closes the detail pane or the alert banner.
+Click any row for the detail: the filing text and PDF link, or for a market-wide headline, why it matters and which sectors and stocks are exposed, with their move today.
+
+**Keyboard:** `1` Desk, `2` Notifications and watchlist, `3` System, `/` search, `j` / `k` step through the feed, `Esc` closes the detail or the alert banner.
 
 ## Alerts
 
-News and prices are checked every 5 minutes (`REFRESH_MINUTES`). New alerts reach an open page within about 15 seconds.
-
 | Alert | When |
 |---|---|
-| Critical | A new story with impact 8 or more, such as an RBI surprise, war escalation or a crude shock |
-| High | A new story with impact 7 or more |
-| Move | A stock in the news or on your watchlist moves 3% or more today (market hours) |
-| Volatility | India VIX jumps 8% or more |
-| Watchlist | Any new story naming a stock on your watchlist |
+| Critical | A market-wide shock in a headline: RBI surprise, war escalation, crude spike |
+| Market-wide | Other big macro or geopolitical headlines: Fed, rupee, tariffs, FII flows |
+| Filing | A tracked stock files results, an order, M&A, a buyback, a management exit, legal action or a material press release |
+| Stock news | A headline about a tracked stock with a clear catalyst |
+| Scheduled | A high-impact data release or expiry is 15 minutes away |
+| Volatility | India VIX up 8% or more on the day |
+| Watchlist | Anything new on a watchlist stock |
 
-If 20 outlets cover the same driver, it alerts once, then at most every 90 minutes. Thresholds live in `settings.bat`.
+Only items from the last hour alert, and the same driver or stock alerts at most once an hour. Alerts appear in the notification centre (bell, top right) with pop-ups, sound and optional desktop notifications. Choose pop-up, sound and desktop for each level on the Notifications page. Desktop notifications need `https` or `localhost`.
 
-### Notification centre
+## How often things update
 
-Alerts are delivered inside the website while it is open in a browser tab:
+| Source | Market days 07:30-20:00 IST | Otherwise |
+|---|---|---|
+| NSE and BSE filings | every 60 s | every 10 min |
+| Headlines | every 3 min | every 10 min |
+| Prices (Yahoo Finance, may be 15 min delayed) | every 3 min | every 30 min |
+| Calendar, results dates, F&O ban list | every 3 h | every 3 h |
 
-- **Notifications button** (top right): shows the unread count. Click it for a panel with the latest notifications. Unread ones are marked with a blue dot. Use **Mark all as read** to clear them, or click a notification to open the story behind it.
-- **Pop-ups**: a card in the bottom-right corner for each new alert. Critical and volatility alerts also show an amber banner across the top of the page. Click either one to open the story.
-- **Sound**: a short tone, with a distinct pattern for critical alerts. The **Sound on/off** button in the top bar mutes everything. Browsers only play sound after you have clicked anywhere on the page once.
-- **Desktop notifications**: system pop-ups that appear even when the tab is in the background. Allow them on the **Notifications and watchlist** page. Browsers only permit this on `https` or `localhost`, so it works when you open the dashboard on the VPS itself, not over `http://VPS-IP`.
-- **Tab title**: shows the unread count, e.g. `(3) NSE Wire`.
-
-On **Notifications and watchlist** (key `6`), choose pop-up, sound and desktop separately for each alert level. Use **Send test notification** to check that everything works. Read state and settings are saved in your browser.
+The browser checks for new items every 15-30 seconds.
 
 ## Install on a Windows VPS
 
-1. Install **Python 3.11 or newer** from python.org. In the installer, tick **"Add python.exe to PATH"** and choose **"Install for all users"**.
-2. Extract this folder to a path without spaces, e.g. `C:\nse-news`.
-3. Double-click **`setup.bat`**. It creates `.venv`, installs dependencies including FinBERT, and creates `settings.bat`. On a small VPS with 2 GB of RAM or less, run `setup.bat nofinbert` from a command prompt instead.
-4. Edit **`settings.bat`**: choose `HOST`, set a password, and turn FinBERT on or off.
-5. Test with **`start-server.bat`**. Open http://localhost:8000 in the VPS browser. Press Ctrl+C to stop.
-6. To run permanently, right-click **`install-autostart.bat` → Run as administrator**. This creates a scheduled task that starts the server at boot without anyone logged in, restarts it if it crashes, and opens the firewall port if `HOST=0.0.0.0`.
+1. Install **Python 3.11 or newer** from python.org. Tick **"Add python.exe to PATH"** and **"Install for all users"**.
+2. Put this folder somewhere, e.g. `C:\nse-news`.
+3. Double-click **`setup.bat`**. It creates `.venv`, installs dependencies and creates `settings.bat`.
+4. Edit **`settings.bat`**: `HOST`, password, expiry weekday.
+5. Test with **`start-server.bat`** and open http://localhost:8000 in the VPS browser. Ctrl+C stops it.
+6. To run permanently, right-click **`install-autostart.bat` → Run as administrator**.
 
-Logs are in `data\server.log`. To stop and remove auto-start, run `uninstall-autostart.bat` as administrator. After changing `settings.bat`, restart the VPS or run `install-autostart.bat` again.
+Logs are in `data\server.log`. After changing `settings.bat`, run `install-autostart.bat` again or restart the VPS.
 
-News and prices refresh every 5 minutes (`REFRESH_MINUTES` in `settings.bat`). You can also click **Check now**. Earnings calendars refresh every 6 hours.
+### Updating from GitHub
 
-## FinBERT sentiment model (optional, runs locally)
+```
+cd "C:\path\to\nse-news"
+git pull
+```
 
-[`ProsusAI/finbert`](https://huggingface.co/ProsusAI/finbert) is a Hugging Face model trained on financial news. It runs on the VPS's CPU: no API key, no cost, and nothing is sent anywhere. The model (about 440 MB) downloads into `data\hf-cache` on the first refresh. It then scores a few hundred headlines in seconds and uses about 1 GB of RAM.
+Then run `uninstall-autostart.bat` and `install-autostart.bat` as administrator (or restart the VPS), and press Ctrl+F5 in the browser.
 
-It has **one specific job: company tone.** For example, "Zomato shares sink after Q2 loss widens" means negative for ETERNAL. A keyword list misses many such phrasings; FinBERT reads them well.
+## Indian events and holidays
 
-It does **not** set macro direction. FinBERT calls "crude oil prices surge" *positive* because prices went up, but for India that is negative (higher import bill, squeezed OMC margins). Macro and geopolitical news therefore keeps the India-specific logic in `rules.py`.
+The economic calendar covers the US, Euro area, China, Japan and UK. Add Indian events to `data\events_manual.csv` (created on first run), one per line:
 
-When FinBERT is confident (≥ 0.70), it decides company tone and the sentiment of company-only stories. Its reading shows at the bottom of a story's detail pane. Set `USE_FINBERT=0` in `settings.bat` to turn it off.
+```
+2026-12-04,10:00,RBI policy decision,high
+2026-12-12,16:00,India CPI inflation,high
+```
+
+Exchange holidays are not known, so in a holiday week check the expiry date against the NSE circular. `EXPIRY_WEEKDAY` in `settings.bat` sets the weekly expiry day.
 
 ## How it works
 
 | File | Role |
 |---|---|
-| `app/sources.py` | Fetches RSS feeds in parallel and removes duplicate stories across feeds |
-| `app/rules.py` | **The knowledge base**: sectors, about 100 NSE company aliases, and about 35 event→sector impact rules (crude, RBI, Fed, rupee, war, tariffs, sanctions, monsoon, SEBI and more). Edit it freely; stored articles are re-scored on the next start. |
-| `app/analyzer.py` | Rule engine: finds events, reads the direction of each driver (e.g. "crude **slips**" vs "crude **jumps**") within its own clause, aims tariff effects at the sector a headline names, and gauges tone for each company |
-| `app/sentiment.py` | Optional FinBERT headline sentiment, used for company tone only |
-| `app/earnings.py` | NSE / BSE result calendars, plus `data/earnings_manual.csv` |
-| `app/market.py` | Yahoo Finance prices: 1D/5D change, 20-day realised volatility, volatility regime, volume spike |
-| `app/alerts.py` | Alert rules and noise control (cooldown per driver) |
-| `app/aggregate.py` | Builds the dashboard views. Weights fade with a 12-hour half-life, and repeat coverage of the same driver counts for progressively less. |
+| `app/filings.py` | NSE and BSE announcements, labels and importance |
+| `app/sources.py` | RSS headlines, fetched in parallel and de-duplicated |
+| `app/rules.py` | Tracked stocks and their name variants, and the market-wide trigger rules |
+| `app/analyzer.py` | Reads a headline: which triggers, which direction, which stocks |
+| `app/feed.py` | Decides what is shown: drops wraps and features, gates world news, groups repeats |
+| `app/calendar_today.py` | Economic calendar, expiries, manual events, F&O ban list |
+| `app/earnings.py` | Results dates from NSE / BSE, plus `data/earnings_manual.csv` |
+| `app/market.py` | Prices from Yahoo Finance |
+| `app/alerts.py` | Alert rules and noise control |
 
-Try the rule engine on any headline at `/api/analyze?text=...` or on the System screen.
+The System page shows whether each source is working, and lets you test any headline to see whether the desk would show it.
 
 ## Known limitations
 
-- NSE and BSE often block automated requests with a 403. If earnings come up empty, add rows to `data/earnings_manual.csv` (`symbol,company,date,purpose`).
-- Prices come from Yahoo Finance, which is unofficial and may be delayed. If it returns nothing, prices show "–".
-- The session clock does not know NSE holidays, so on a holiday it shows "Market open" during normal hours.
-- The rule engine reads headlines only. It cannot tell whether news was already expected or priced in. This is not investment advice.
+- **NSE and BSE block some server IP addresses.** If both show as failing on the System page, filings are missing and the desk shows only headlines. A VPS in India (or one whose IP the exchanges accept) fixes this.
+- Headlines from RSS feeds arrive minutes after the event. Filings are the fastest free source; a paid wire (Bloomberg, Reuters) is faster still.
+- Yahoo Finance prices are unofficial and can lag by up to 15 minutes.
+- The rules read headlines only. They cannot tell whether news was already expected or priced in. This is not investment advice.

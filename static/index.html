@@ -18,9 +18,9 @@
     <span class="session-clock" id="sessionClock">--:--:--</span>
     <span class="session-next" id="sessionNext"></span>
   </div>
-  <div class="quotes" id="quotes" aria-label="Market indicators"></div>
+  <div class="quotes" id="quotes" aria-label="Indices"></div>
   <div class="bar-right">
-    <div class="feed" id="feed" title="News and prices are checked automatically">
+    <div class="feed" id="feed" title="Exchange filings are checked every minute, headlines every 3 minutes">
       <span class="dot" aria-hidden="true"></span><span id="feedText">Connecting</span>
     </div>
     <button class="btn-quiet" id="soundBtn" aria-pressed="true" title="Alert sound">Sound on</button>
@@ -48,114 +48,51 @@
   <button class="banner-close" id="bannerClose" aria-label="Dismiss alert">Dismiss</button>
 </div>
 
-<div class="strip" id="strip" aria-label="Sector indices today"></div>
-
 <nav class="views" id="views" aria-label="Views">
-  <button data-view="monitor" class="on"><kbd>1</kbd>Monitor</button>
-  <button data-view="news"><kbd>2</kbd>News</button>
-  <button data-view="vol"><kbd>3</kbd>Volatility</button>
-  <button data-view="sectors"><kbd>4</kbd>Sectors</button>
-  <button data-view="earnings"><kbd>5</kbd>Earnings</button>
-  <button data-view="alerts"><kbd>6</kbd>Notifications and watchlist</button>
-  <button data-view="system"><kbd>7</kbd>System</button>
+  <button data-view="desk" class="on"><kbd>1</kbd>Desk</button>
+  <button data-view="alerts"><kbd>2</kbd>Notifications and watchlist</button>
+  <button data-view="system"><kbd>3</kbd>System</button>
   <button class="refresh" id="refreshBtn" title="Check all sources now">Check now</button>
 </nav>
 
 <main>
-  <!-- MONITOR -->
-  <section class="view monitor on" id="v-monitor">
-    <div class="pane wire-pane">
-      <div class="pane-head">
-        <h2>News wire</h2>
-        <div class="seg" id="wireFilter" role="group" aria-label="Filter news">
-          <button data-f="all" class="on">All</button>
-          <button data-f="high">High impact</button>
-          <button data-f="india">India</button>
-          <button data-f="global">Global</button>
+  <!-- DESK -->
+  <section class="view desk on" id="v-desk">
+    <div class="pane feed-pane">
+      <div class="pane-head wrap">
+        <h2>Filings and news</h2>
+        <div class="seg" id="feedFilter" role="group" aria-label="Show">
+          <button data-f="" class="on">All</button>
+          <button data-f="high">Market movers</button>
+          <button data-f="filing">Filings</button>
+          <button data-f="news">News</button>
+          <button data-f="market">Market-wide</button>
           <button data-f="watch">Watchlist</button>
         </div>
-        <input class="search" id="wireSearch" type="search" placeholder="Search  /" aria-label="Search headlines">
+        <select id="feedWindow" aria-label="Time window">
+          <option value="close">Since last close</option>
+          <option value="24">Last 24 hours</option>
+          <option value="48">Last 48 hours</option>
+        </select>
+        <label class="check"><input type="checkbox" id="feedRoutine"> Routine filings</label>
+        <input class="search" id="feedSearch" type="search" placeholder="Symbol or word  /" aria-label="Search">
       </div>
-      <ol class="wire" id="wire"></ol>
+      <div class="feed-note" id="feedNote" hidden></div>
+      <ol class="wire" id="feedList"></ol>
     </div>
 
     <div class="side">
       <div class="pane">
+        <div class="pane-head"><h2>Today</h2><span class="hint" id="todayHint">IST</span></div>
+        <div class="today" id="today"></div>
+      </div>
+      <div class="pane">
+        <div class="pane-head"><h2>Global cues</h2><span class="hint">Yahoo Finance, may be delayed</span></div>
+        <div class="tbl-wrap"><table class="tbl" id="globalTbl"></table></div>
+      </div>
+      <div class="pane">
         <div class="pane-head"><h2>Latest alerts</h2><button class="link" data-goto="alerts">Full log</button></div>
         <ol class="alerts" id="alertsMini"></ol>
-      </div>
-      <div class="pane">
-        <div class="pane-head"><h2>Volatility watch</h2><span class="hint">ranked by news pressure</span><button class="link" data-goto="vol">Full list</button></div>
-        <div class="tbl-wrap"><table class="tbl" id="volMini"></table></div>
-      </div>
-      <div class="pair">
-        <div class="pane">
-          <div class="pane-head"><h2>Sector pressure</h2><button class="link" data-goto="sectors">All sectors</button></div>
-          <ol class="sectors" id="secMini"></ol>
-        </div>
-        <div class="pane">
-          <div class="pane-head"><h2>Results this week</h2><button class="link" data-goto="earnings">Calendar</button></div>
-          <div id="earnMini"></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- NEWS -->
-  <section class="view" id="v-news">
-    <div class="pane">
-      <div class="pane-head wrap">
-        <h2>All news</h2>
-        <input class="search" id="newsSearch" type="search" placeholder="Search headlines" aria-label="Search headlines">
-        <select id="newsCat" aria-label="Category">
-          <option value="">All categories</option>
-          <option>Geopolitical</option><option>Macro</option><option>Commodity</option>
-          <option>Policy</option><option>Sector</option><option>Corporate</option><option>General</option>
-        </select>
-        <select id="newsKind" aria-label="Region">
-          <option value="">India and global</option><option value="market">India</option><option value="geo">Global</option>
-        </select>
-        <select id="newsHours" aria-label="Time window">
-          <option value="6">Last 6 hours</option><option value="24" selected>Last 24 hours</option><option value="48">Last 48 hours</option>
-        </select>
-        <select id="newsSort" aria-label="Sort">
-          <option value="time">Newest first</option><option value="impact">Highest impact first</option>
-        </select>
-        <label class="range">Min impact <input id="newsMin" type="range" min="0" max="9" step="0.5" value="2"><output id="newsMinV">2</output></label>
-      </div>
-      <ol class="wire" id="newsList"></ol>
-    </div>
-  </section>
-
-  <!-- VOLATILITY -->
-  <section class="view" id="v-vol">
-    <div class="pane">
-      <div class="pane-head"><h2>Volatility watch</h2>
-        <span class="hint">News pressure combines how many stories hit a stock, how big they are and how recent. Upcoming results and rising realised volatility add to it. Prices from Yahoo Finance and may be delayed.</span></div>
-      <div class="tbl-wrap"><table class="tbl" id="volTable"></table></div>
-    </div>
-  </section>
-
-  <!-- SECTORS -->
-  <section class="view" id="v-sectors">
-    <div class="pane">
-      <div class="pane-head"><h2>Sector pressure from news, last 24 hours</h2></div>
-      <div class="tbl-wrap"><table class="tbl" id="secTable"></table></div>
-    </div>
-  </section>
-
-  <!-- EARNINGS -->
-  <section class="view" id="v-earnings">
-    <div class="cols">
-      <div class="pane">
-        <div class="pane-head"><h2>Upcoming results, next 14 days</h2>
-          <label class="check"><input type="checkbox" id="trackedOnly" checked> Large caps only</label></div>
-        <div class="tbl-wrap"><table class="tbl" id="earnTable"></table></div>
-        <p class="note">From the NSE and BSE calendars. If both are blocked from your server, add dates to <code>data\earnings_manual.csv</code>.</p>
-      </div>
-      <div class="pane">
-        <div class="pane-head"><h2>Results in the news, last 48 hours</h2></div>
-        <ol class="wire" id="reported"></ol>
       </div>
     </div>
   </section>
@@ -170,7 +107,7 @@
       <div class="stack">
         <div class="pane">
           <div class="pane-head"><h2>My watchlist</h2></div>
-          <p class="note">Any story naming these stocks raises an alert, and they get price-move alerts during market hours.</p>
+          <p class="note">Every filing and headline on these stocks raises an alert.</p>
           <form class="watch-add" id="watchForm">
             <input id="watchInput" list="knownSymbols" placeholder="Add NSE symbol, e.g. RELIANCE" aria-label="NSE symbol" autocomplete="off">
             <datalist id="knownSymbols"></datalist>
@@ -188,13 +125,15 @@
         <div class="pane">
           <div class="pane-head"><h2>What raises an alert</h2></div>
           <dl class="kv">
-            <dt><span class="lvl critical">Critical</span></dt><dd>A new story with impact 8 or more, such as an RBI surprise, war escalation or a crude shock.</dd>
-            <dt><span class="lvl high">High</span></dt><dd>A new story with impact 7 or more.</dd>
-            <dt><span class="lvl move">Move</span></dt><dd>A stock in the news or on your watchlist moves 3% or more today.</dd>
-            <dt><span class="lvl vix">Volatility</span></dt><dd>India VIX jumps 8% or more.</dd>
-            <dt><span class="lvl watch">Watchlist</span></dt><dd>Any new story naming a stock on your watchlist.</dd>
+            <dt><span class="lvl critical">Critical</span></dt><dd>Market-wide shock in a headline: RBI surprise, war escalation, crude spike.</dd>
+            <dt><span class="lvl high">Market-wide</span></dt><dd>Other big macro or geopolitical headlines: Fed, rupee, tariffs, FII flows.</dd>
+            <dt><span class="lvl filing">Filing</span></dt><dd>A tracked stock files results, an order, M&amp;A, a buyback, a management exit or legal action.</dd>
+            <dt><span class="lvl stock">Stock news</span></dt><dd>A headline on a tracked stock with a clear catalyst: results, deal, order, regulator.</dd>
+            <dt><span class="lvl event">Scheduled</span></dt><dd>A high-impact data release or expiry is 15 minutes away.</dd>
+            <dt><span class="lvl vix">Volatility</span></dt><dd>India VIX up 8% or more on the day.</dd>
+            <dt><span class="lvl watch">Watchlist</span></dt><dd>Anything new on a watchlist stock.</dd>
           </dl>
-          <p class="note">Coverage of the same driver from many outlets alerts once every 90 minutes. Thresholds can be changed in <code>settings.bat</code>.</p>
+          <p class="note">Only items from the last hour alert, and the same driver or stock alerts at most once an hour. Thresholds are in <code>settings.bat</code>.</p>
         </div>
       </div>
     </div>
@@ -210,27 +149,25 @@
       <div class="stack">
         <div class="pane">
           <div class="pane-head"><h2>Test a headline</h2></div>
+          <p class="note">Shows whether the desk would display a headline, and how it reads it.</p>
           <form class="watch-add" id="tryForm">
-            <input id="tryText" placeholder="Paste any headline" aria-label="Headline to analyse">
-            <button class="btn">Analyse</button>
+            <input id="tryText" placeholder="Paste any headline" aria-label="Headline to test">
+            <button class="btn">Test</button>
           </form>
           <div id="tryOut"></div>
         </div>
         <div class="pane">
-          <div class="pane-head"><h2>How to read the scores</h2></div>
-          <dl class="kv">
-            <dt>Impact 0 to 10</dt><dd>How much the story could move Indian equities. 3 is one small stock, 5 a large cap or a sector, 7 several sectors, 9 or more a market-wide shock.</dd>
-            <dt>Lean</dt><dd>Likely direction for Indian equities, not for the asset in the headline. Rising crude is bearish for India.</dd>
-            <dt>Sector arrows</dt><dd>One arrow is a mild effect, two a strong one. The ± sign means the sector is exposed but direction is unclear.</dd>
-            <dt>Top bar colours</dt><dd>Green or red shows the effect on Indian equities. A rising VIX, dollar or Brent shows in red.</dd>
-          </dl>
+          <div class="pane-head"><h2>Indian events</h2></div>
+          <p class="note">The economic calendar covers US, Europe, China and Japan data. Add Indian events (RBI policy, CPI, GDP) to
+            <code>data\events_manual.csv</code> on the server, one per line: <code>2026-12-04,10:00,RBI policy decision,high</code>.
+            Exchange holidays are not known, so check the expiry date in a holiday week.</p>
         </div>
       </div>
     </div>
   </section>
 </main>
 
-<aside class="drawer" id="drawer" aria-label="Story detail" hidden>
+<aside class="drawer" id="drawer" aria-label="Detail" hidden>
   <button class="drawer-close" id="drawerClose" aria-label="Close detail">Close</button>
   <div id="drawerBody"></div>
 </aside>
