@@ -87,7 +87,7 @@ The System page shows whether each source is working, and lets you test any head
 
 ## Known limitations
 
-- **NSE and BSE block some server IP addresses.** If both show as failing on the System page, filings are missing and the desk shows only headlines. A VPS in India (or one whose IP the exchanges accept) fixes this.
+- **NSE and BSE block most server IP addresses outside India.** After three refusals in a row the desk stops asking and retries every 6 hours, and runs on headlines alone (the status line under the side column says so). Extra Google News searches for orders, results and corporate actions cover most of what filings would. A VPS in India brings filings back automatically.
 - Headlines from RSS feeds arrive minutes after the event. Filings are the fastest free source; a paid wire (Bloomberg, Reuters) is faster still.
 - Yahoo Finance prices are unofficial and can lag by up to 15 minutes.
 - The rules read headlines only. They cannot tell whether news was already expected or priced in. This is not investment advice.

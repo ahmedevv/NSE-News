@@ -6,7 +6,7 @@
 <title>NSE Wire</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -14,30 +14,40 @@
 <header class="bar">
   <div class="brand"><span class="mark" aria-hidden="true"></span>NSE Wire</div>
   <div class="session" id="session" title="NSE cash session 09:15 to 15:30 IST, Monday to Friday. Exchange holidays are not tracked.">
-    <span class="session-state" id="sessionState">–</span>
-    <span class="session-clock" id="sessionClock">--:--:--</span>
-    <span class="session-next" id="sessionNext"></span>
+    <span class="dot" id="sessionDot" aria-hidden="true"></span>
+    <span id="sessionState">–</span>
+    <span class="mono dim" id="sessionClock">--:--</span>
   </div>
-  <div class="quotes" id="quotes" aria-label="Indices"></div>
-  <div class="bar-right">
-    <div class="feed" id="feed" title="Exchange filings are checked every minute, headlines every 3 minutes">
-      <span class="dot" aria-hidden="true"></span><span id="feedText">Connecting</span>
-    </div>
-    <button class="btn-quiet" id="soundBtn" aria-pressed="true" title="Alert sound">Sound on</button>
-    <button class="btn-alerts" id="alertBtn" aria-haspopup="true" aria-expanded="false" aria-controls="notifPanel">
-      <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-6V11a7 7 0 0 0-5.5-6.84V3a1.5 1.5 0 0 0-3 0v1.16A7 7 0 0 0 5 11v5l-2 2v1h18v-1Z"/></svg>
-      Notifications <span class="count" id="alertCount" hidden>0</span></button>
-  </div>
+  <nav class="views" id="views" aria-label="Views">
+    <button data-view="desk" class="on">Desk</button>
+    <button data-view="alerts">Alerts</button>
+    <button data-view="system">System</button>
+  </nav>
+  <div class="grow"></div>
+  <label class="search">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+    <span class="sr">Search the desk</span>
+    <input id="feedSearch" type="search" placeholder="Search stock or keyword   /" autocomplete="off">
+  </label>
+  <button class="icon-btn" id="soundBtn" aria-pressed="true" aria-label="Alert sound on" title="Alert sound">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path class="wave" d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/><path class="mute" d="m22 9-6 6M16 9l6 6"/></svg>
+  </button>
+  <button class="icon-btn" id="alertBtn" aria-haspopup="true" aria-expanded="false" aria-controls="notifPanel" aria-label="Notifications">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+    <span class="count" id="alertCount" hidden>0</span>
+  </button>
 </header>
+
+<section class="quotes" id="quotes" aria-label="Index and macro quotes"></section>
 
 <div class="notif-panel" id="notifPanel" role="dialog" aria-label="Notifications" hidden>
   <div class="notif-head">
     <h2>Notifications</h2>
-    <span class="hint" id="notifSummary">All caught up</span>
-    <button class="link" id="markAllRead">Mark all as read</button>
+    <span class="dim" id="notifSummary">All caught up</span>
+    <button class="link" id="markAllRead">Mark all read</button>
   </div>
   <ol class="alerts" id="notifList"></ol>
-  <div class="notif-foot"><button class="link" id="panelSettings">Notification settings and full log</button></div>
+  <div class="notif-foot"><button class="link" id="panelSettings">Settings and full log</button></div>
 </div>
 
 <div class="banner" id="banner" role="alert" hidden>
@@ -48,92 +58,110 @@
   <button class="banner-close" id="bannerClose" aria-label="Dismiss alert">Dismiss</button>
 </div>
 
-<nav class="views" id="views" aria-label="Views">
-  <button data-view="desk" class="on"><kbd>1</kbd>Desk</button>
-  <button data-view="alerts"><kbd>2</kbd>Notifications and watchlist</button>
-  <button data-view="system"><kbd>3</kbd>System</button>
-  <button class="refresh" id="refreshBtn" title="Check all sources now">Check now</button>
-</nav>
-
 <main>
   <!-- DESK -->
   <section class="view desk on" id="v-desk">
-    <div class="pane feed-pane">
-      <div class="pane-head wrap">
-        <h2>Filings and news</h2>
-        <div class="seg" id="feedFilter" role="group" aria-label="Show">
-          <button data-f="" class="on">All</button>
-          <button data-f="high">Market movers</button>
-          <button data-f="filing">Filings</button>
-          <button data-f="news">News</button>
-          <button data-f="market">Market-wide</button>
-          <button data-f="watch">Watchlist</button>
+    <section class="feed-col" aria-label="Live feed">
+      <div class="feed-head">
+        <div>
+          <h1 id="feedTitle">Since the last close</h1>
+          <p class="dim" id="feedSummary"></p>
         </div>
-        <select id="feedWindow" aria-label="Time window">
-          <option value="close">Since last close</option>
-          <option value="24">Last 24 hours</option>
-          <option value="48">Last 48 hours</option>
-        </select>
-        <label class="check"><input type="checkbox" id="feedRoutine"> Routine filings</label>
-        <input class="search" id="feedSearch" type="search" placeholder="Symbol or word  /" aria-label="Search">
+        <div class="feed-tools">
+          <div class="pills" id="feedFilter" role="group" aria-label="Show">
+            <button data-f="" class="on">All <span></span></button>
+            <button data-f="stock">Stocks <span></span></button>
+            <button data-f="market">Market-wide <span></span></button>
+            <button data-f="watch">Watchlist <span></span></button>
+          </div>
+          <select id="feedWindow" aria-label="Time window">
+            <option value="close">Since last close</option>
+            <option value="24">Last 24 hours</option>
+            <option value="48">Last 48 hours</option>
+          </select>
+        </div>
       </div>
-      <div class="feed-note" id="feedNote" hidden></div>
       <ol class="wire" id="feedList"></ol>
-    </div>
+    </section>
 
-    <div class="side">
-      <div class="pane">
-        <div class="pane-head"><h2>Today</h2><span class="hint" id="todayHint">IST</span></div>
-        <div class="today" id="today"></div>
-      </div>
-      <div class="pane">
-        <div class="pane-head"><h2>Global cues</h2><span class="hint">Yahoo Finance, may be delayed</span></div>
-        <div class="tbl-wrap"><table class="tbl" id="globalTbl"></table></div>
-      </div>
-      <div class="pane">
-        <div class="pane-head"><h2>Latest alerts</h2><button class="link" data-goto="alerts">Full log</button></div>
-        <ol class="alerts" id="alertsMini"></ol>
-      </div>
-    </div>
+    <aside class="side">
+      <section class="next" id="nextUp" aria-label="Next event" hidden>
+        <div class="eyebrow">Next up</div>
+        <div class="next-row"><span class="next-title" id="nextTitle"></span><span class="next-cd mono" id="nextCd"></span></div>
+        <div class="next-sub" id="nextSub"></div>
+      </section>
+
+      <section class="card" aria-label="Today">
+        <h3 id="todayTitle">Today</h3>
+        <div id="events"></div>
+        <div class="split">
+          <div>
+            <div class="eyebrow">Expiry</div>
+            <div class="strong" id="expiry">–</div>
+            <div class="dim small" id="expirySub"></div>
+          </div>
+          <div>
+            <div class="eyebrow">F&amp;O ban</div>
+            <div class="chips" id="ban"></div>
+          </div>
+        </div>
+        <div class="card-sec">
+          <div class="eyebrow">Results today / tomorrow</div>
+          <div class="chips" id="results"></div>
+        </div>
+      </section>
+
+      <section class="card" aria-label="Global cues">
+        <h3>Global cues</h3>
+        <div class="cues" id="globalTbl"></div>
+      </section>
+
+      <section class="card" aria-label="Latest alerts">
+        <h3>Latest alerts <button class="link" data-goto="alerts">Full log</button></h3>
+        <ol class="alerts mini" id="alertsMini"></ol>
+      </section>
+
+      <p class="dim small" id="statusLine">Connecting</p>
+    </aside>
   </section>
 
   <!-- ALERTS -->
   <section class="view" id="v-alerts">
     <div class="cols">
-      <div class="pane">
-        <div class="pane-head"><h2>Notification log</h2><button class="btn" id="testAlert">Send test notification</button></div>
+      <div class="card">
+        <h3>Notification log <button class="btn" id="testAlert">Send test</button></h3>
         <ol class="alerts full" id="alertLog"></ol>
       </div>
       <div class="stack">
-        <div class="pane">
-          <div class="pane-head"><h2>My watchlist</h2></div>
-          <p class="note">Every filing and headline on these stocks raises an alert.</p>
-          <form class="watch-add" id="watchForm">
-            <input id="watchInput" list="knownSymbols" placeholder="Add NSE symbol, e.g. RELIANCE" aria-label="NSE symbol" autocomplete="off">
+        <div class="card pad">
+          <h3>My watchlist</h3>
+          <p class="note">Every headline on these stocks raises an alert.</p>
+          <form class="inline-form" id="watchForm">
+            <input id="watchInput" list="knownSymbols" placeholder="NSE symbol, e.g. RELIANCE" aria-label="NSE symbol" autocomplete="off">
             <datalist id="knownSymbols"></datalist>
             <button class="btn">Add</button>
           </form>
           <ul class="watch-list" id="watchList"></ul>
         </div>
-        <div class="pane">
-          <div class="pane-head"><h2>Notification settings</h2></div>
-          <p class="note">Choose how each kind of alert reaches you on this browser. Critical and volatility pop-ups also show the amber banner at the top of the page.</p>
+        <div class="card pad">
+          <h3>Notification settings</h3>
+          <p class="note">How each kind of alert reaches you in this browser. Critical and volatility pop-ups also show a banner.</p>
           <div class="tbl-wrap"><table class="tbl prefs" id="prefTable"></table></div>
           <button class="btn" id="notifyBtn">Allow desktop notifications</button>
           <p class="note" id="notifyNote"></p>
         </div>
-        <div class="pane">
-          <div class="pane-head"><h2>What raises an alert</h2></div>
+        <div class="card pad">
+          <h3>What raises an alert</h3>
           <dl class="kv">
-            <dt><span class="lvl critical">Critical</span></dt><dd>Market-wide shock in a headline: RBI surprise, war escalation, crude spike.</dd>
+            <dt><span class="lvl critical">Critical</span></dt><dd>Market-wide shock: RBI surprise, war escalation, crude spike.</dd>
             <dt><span class="lvl high">Market-wide</span></dt><dd>Other big macro or geopolitical headlines: Fed, rupee, tariffs, FII flows.</dd>
-            <dt><span class="lvl filing">Filing</span></dt><dd>A tracked stock files results, an order, M&amp;A, a buyback, a management exit or legal action.</dd>
-            <dt><span class="lvl stock">Stock news</span></dt><dd>A headline on a tracked stock with a clear catalyst: results, deal, order, regulator.</dd>
+            <dt><span class="lvl stock">Stock news</span></dt><dd>A tracked stock with a clear catalyst: results, order, deal, regulator, management exit.</dd>
+            <dt><span class="lvl filing">Filing</span></dt><dd>An exchange filing (only when NSE or BSE accepts this server).</dd>
             <dt><span class="lvl event">Scheduled</span></dt><dd>A high-impact data release or expiry is 15 minutes away.</dd>
             <dt><span class="lvl vix">Volatility</span></dt><dd>India VIX up 8% or more on the day.</dd>
             <dt><span class="lvl watch">Watchlist</span></dt><dd>Anything new on a watchlist stock.</dd>
           </dl>
-          <p class="note">Only items from the last hour alert, and the same driver or stock alerts at most once an hour. Thresholds are in <code>settings.bat</code>.</p>
+          <p class="note">Only items from the last hour alert, and the same driver or stock alerts at most once an hour.</p>
         </div>
       </div>
     </div>
@@ -142,35 +170,35 @@
   <!-- SYSTEM -->
   <section class="view" id="v-system">
     <div class="cols">
-      <div class="pane">
-        <div class="pane-head"><h2>Data sources</h2></div>
+      <div class="card">
+        <h3>Data sources <button class="btn" id="refreshBtn">Check now</button></h3>
         <div class="tbl-wrap"><table class="tbl" id="srcTable"></table></div>
       </div>
       <div class="stack">
-        <div class="pane">
-          <div class="pane-head"><h2>Test a headline</h2></div>
+        <div class="card pad">
+          <h3>Test a headline</h3>
           <p class="note">Shows whether the desk would display a headline, and how it reads it.</p>
-          <form class="watch-add" id="tryForm">
+          <form class="inline-form" id="tryForm">
             <input id="tryText" placeholder="Paste any headline" aria-label="Headline to test">
             <button class="btn">Test</button>
           </form>
           <div id="tryOut"></div>
         </div>
-        <div class="pane">
-          <div class="pane-head"><h2>Indian events</h2></div>
-          <p class="note">The economic calendar covers US, Europe, China and Japan data. Add Indian events (RBI policy, CPI, GDP) to
+        <div class="card pad">
+          <h3>Indian events</h3>
+          <p class="note">The calendar covers US, Europe, China and Japan data. Add Indian events (RBI policy, CPI, GDP) to
             <code>data\events_manual.csv</code> on the server, one per line: <code>2026-12-04,10:00,RBI policy decision,high</code>.
             Exchange holidays are not known, so check the expiry date in a holiday week.</p>
+        </div>
+        <div class="card pad">
+          <h3>Keyboard</h3>
+          <p class="note"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> switch views, <kbd>/</kbd> search, <kbd>j</kbd> <kbd>k</kbd> step through the feed,
+            <kbd>Enter</kbd> opens a story, <kbd>Esc</kbd> closes it.</p>
         </div>
       </div>
     </div>
   </section>
 </main>
-
-<aside class="drawer" id="drawer" aria-label="Detail" hidden>
-  <button class="drawer-close" id="drawerClose" aria-label="Close detail">Close</button>
-  <div id="drawerBody"></div>
-</aside>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
 

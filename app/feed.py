@@ -40,7 +40,10 @@ FEATURE = re.compile(
     r"eps growth|undervalued|overvalued|intrinsic value|fair value|returns on capital|insiders? (bought|sold)|"
     r"is it time|a closer look|investors should|dividend investors|stock analysis|valuation check|\d+-dma|"
     r"moving average|is it a (rebound|buy|sell))\b", re.I)
-LOW_SOURCES = re.compile(r"simply wall|motley fool|zacks|marketbeat|benzinga|stocktitan|seeking alpha|yahoo finance|marketsmojo", re.I)
+LOW_SOURCES = re.compile(r"simply wall|motley fool|zacks|marketbeat|benzinga|stocktitan|seeking alpha|yahoo finance|marketsmojo|"
+                         r"chartmill|gurufocus|investing\.com|globenewswire|business wire|pr newswire|accesswire", re.I)
+# Stories about US / foreign listings ("IRIDEX (NASDAQ:IRIX) shares fall ...") say nothing about Indian stocks
+FOREIGN_TICKER = re.compile(r"\((nasdaq|nyse|nyse american|amex|otc\w*|lse|tsx|asx|hkex)\s*:\s*[a-z.]+\)", re.I)
 
 # ---- gates that decide whether a world / macro headline is market-wide for an Indian intraday trader
 _R = lambda p: re.compile(p, re.I)
@@ -113,7 +116,7 @@ BIG_MOVE = _R(r"\b(\d+(\.\d+)?)\s?(%|per ?cent)")
 def news_item(a: dict) -> dict | None:
     an = a["analysis"] or {}
     title = a["title"]
-    if is_wrap(title) or LOW_SOURCES.search(a.get("source") or ""):
+    if is_wrap(title) or LOW_SOURCES.search(a.get("source") or "") or FOREIGN_TICKER.search(title):
         return None
     syms = [s["symbol"] for s in an.get("stocks", []) if s["symbol"] in TRACKED]
     if len(syms) > 4:  # a list of many stocks is a round-up, not news about one of them

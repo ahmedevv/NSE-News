@@ -56,6 +56,10 @@ FEEDS = [
     ("Business Standard - Companies", "https://www.business-standard.com/rss/companies-101.rss", "market"),
     ("BusinessLine - Markets", "https://www.thehindubusinessline.com/markets/feeder/default.rss", "market"),
     ("Google News - Indian stocks", "https://news.google.com/rss/search?q=(shares+OR+stock)+(NSE+OR+Nifty+OR+Sensex)+when:1d&hl=en-IN&gl=IN&ceid=IN:en", "market"),
+    # Catalyst searches: catch stock news that the outlet feeds above miss (needed when exchange filings are blocked)
+    ("Google News - Orders and deals", "https://news.google.com/rss/search?q=(bags+OR+wins+OR+secures+OR+receives)+(order+OR+contract+OR+deal)+(crore+OR+NSE+OR+shares)+when:1d&hl=en-IN&gl=IN&ceid=IN:en", "market"),
+    ("Google News - Results", "https://news.google.com/rss/search?q=(Q1+OR+Q2+OR+Q3+OR+Q4)+results+(profit+OR+revenue+OR+margin)+(shares+OR+NSE)+when:1d&hl=en-IN&gl=IN&ceid=IN:en", "market"),
+    ("Google News - Corporate actions", "https://news.google.com/rss/search?q=(acquisition+OR+stake+OR+buyback+OR+merger+OR+%22block+deal%22+OR+resigns+OR+SEBI+OR+USFDA)+(shares+OR+NSE+OR+crore)+when:1d&hl=en-IN&gl=IN&ceid=IN:en", "market"),
     ("Google News - Geopolitics and macro", "https://news.google.com/rss/search?q=(war+OR+sanctions+OR+tariffs+OR+%22crude+oil%22+OR+OPEC+OR+%22Federal+Reserve%22+OR+RBI)+when:1d&hl=en-IN&gl=IN&ceid=IN:en", "geo"),
     ("Reuters (via Google News)", "https://news.google.com/rss/search?q=site:reuters.com+(markets+OR+india+OR+oil+OR+fed)+when:1d&hl=en-US&gl=US&ceid=US:en", "geo"),
     ("BBC - Business", "https://feeds.bbci.co.uk/news/business/rss.xml", "geo"),

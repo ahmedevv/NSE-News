@@ -192,17 +192,49 @@ def fetch_nse() -> list[dict]:
 
 
 # ----------------------------------------------------------------------------- refresh
+# An exchange that refuses this server's IP (HTTP 401/403) three times in a row is treated as blocked
+# and only retried every few hours, so a VPS outside India does not hammer it or fill the log.
+BLOCK_AFTER = 3
+RETRY_BLOCKED_HOURS = 6
+_state: dict[str, dict] = {}
+
+
+def blocked() -> bool:
+    """True when every exchange is currently refusing this server."""
+    import time
+    return all(_state.get(n, {}).get("until", 0) > time.time() for n in ("NSE filings", "BSE filings"))
+
+
 def refresh() -> list[dict]:
     """Fetch new filings from both exchanges, save them and return the new ones."""
+    import time
     new = []
     for name, fn in (("NSE filings", fetch_nse), ("BSE filings", fetch_bse)):
+        st = _state.setdefault(name, {"fails": 0, "until": 0.0})
+        if st["until"] > time.time():
+            continue
         try:
             rows = fn()
             db.save_filings(rows)
             db.set_source_status(name, True, len(rows))
+            if st["fails"] >= BLOCK_AFTER:
+                log.info("%s reachable again", name)
+            st["fails"], st["until"] = 0, 0.0
             new.extend(rows)
         except Exception as ex:
-            log.warning("%s failed: %s", name, ex)
+            code = getattr(getattr(ex, "response", None), "status_code", None)
+            if code in (401, 403):
+                st["fails"] += 1
+                if st["fails"] >= BLOCK_AFTER:
+                    st["until"] = time.time() + RETRY_BLOCKED_HOURS * 3600
+                    if st["fails"] == BLOCK_AFTER:
+                        log.warning("%s refuses this server's IP; retrying every %d h. The desk runs on headlines.",
+                                    name, RETRY_BLOCKED_HOURS)
+                    db.set_source_status(name, False, 0, f"Blocked by the exchange (HTTP {code}) - normal for a server "
+                                                         f"outside India. Retried every {RETRY_BLOCKED_HOURS} h.")
+                    continue
+            else:
+                log.warning("%s failed: %s", name, ex)
             db.set_source_status(name, False, 0, _reason(ex))
     return new
 

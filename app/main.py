@@ -190,6 +190,8 @@ def desk():
         "quotes": [{"symbol": k, "name": v, **(mk.get(k) or {})} for k, v in INDIA_TICKERS.items()],
         "global": [{"symbol": k, "name": v, **(mk.get(k) or {})} for k, v in GLOBAL_TICKERS.items()],
         "events": calendar_today.upcoming(2, 36),
+        "next_expiry": next((e for e in calendar_today.expiries(10) if e["ts"] > _now()), None),
+        "filings_blocked": filings.blocked(),
         "results": feed.results(2),
         "ban": [s for s in (db.get_meta("fo_ban") or "").split(",") if s] if ban_today else None,
         "watchlist": db.get_watchlist(),
